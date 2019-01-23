@@ -1,0 +1,4 @@
+colossus
+numpy
+pyfftw
+scipy
