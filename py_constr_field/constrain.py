@@ -2,11 +2,11 @@
 import attr
 import numpy as np
 from scipy.integrate import dblquad
-from itertools import combinations_with_replacement, permutations
+from itertools import combinations_with_replacement
 
 from .field import FieldHandler
 from .filters import Filter
-from .utils import integrand
+from .utils import integrand, build_index
 
 
 def rotate_covariance(c1, c2, cov):
@@ -16,6 +16,10 @@ def rotate_covariance(c1, c2, cov):
     X2 = c2._cfd.position.astype(np.float64)
     Nf1 = c1._cfd.N[:, :-1].sum(axis=1)[0]
     Nf2 = c2._cfd.N[:, :-1].sum(axis=1)[0]
+
+    # Nothing to do for scalars or at zero separation
+    if (Nf1 == 0 and Nf2 == 0) or np.all(X1 == X2):
+        return cov
 
     r = X2 - X1
     e3 = r
@@ -31,35 +35,41 @@ def rotate_covariance(c1, c2, cov):
     R1 = np.array([[np.dot(b, e) for b in B] for e in E])
     R2 = np.array([[np.dot(b, e) for b in B] for e in E])
 
-    def build_index(Nfreedom):
-        ii = 0
-        index = np.zeros([3]*Nfreedom, dtype=int)
-        combin = combinations_with_replacement(range(3), Nfreedom)
-        for icount, ii in enumerate(combin):
-            for jj in permutations(ii):
-                index[jj] = icount
-        return np.atleast_1d(index)
-
     index1 = build_index(Nf1)
     index2 = build_index(Nf2)
 
     # Unpack covariance into large tensor of shape (3, 3, ...)
-    ext_cov = cov[index1][:, index2]
+    ext_cov = cov[:, index2][index1, ...]
+
+    # Drop useless dimensions
+    if Nf1 == 0:
+        ext_cov = ext_cov[0, ...]
+    if Nf2 == 0:
+        ext_cov = ext_cov[..., 0]
+
     icount = 0
+
     for i in range(Nf1):
         ext_cov[:] = np.tensordot(ext_cov, R1, axes=(icount, 0))
         icount += 1
-    if Nf1 == 0:  # Scalar case: skip the dimension
-        icount += 1
-
     for i in range(Nf2):
         ext_cov[:] = np.tensordot(ext_cov, R2, axes=(icount, 0))
         icount += 1
 
+    # Re-add missing dimensions
+    if Nf1 == 0:
+        ext_cov = ext_cov[None, ...]
+    if Nf2 == 0:
+        ext_cov = ext_cov[..., None]
+
     # Reproject into dense space
     new_cov = np.zeros_like(cov)
     for a, ii in enumerate(combinations_with_replacement(range(3), Nf1)):
+        if Nf1 == 0:
+            ii = [0]
         for b, jj in enumerate(combinations_with_replacement(range(3), Nf2)):
+            if Nf2 == 0:
+                jj = [0]
             ipos = list(ii) + list(jj)
             new_cov[a, b] = ext_cov.item(*ipos)
 
@@ -131,7 +141,10 @@ def compute_covariance(c1, c2, frame='original'):
                     args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2))
                 cov[i, j] = sign * integral / eightpi3
 
-    return rotate_covariance(cov)
+    if frame is 'original':
+        return rotate_covariance(c1, c2, cov)
+    elif frame is 'separation':
+        return cov
 
 
 @attr.s(frozen=True)

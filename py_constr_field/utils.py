@@ -1,5 +1,6 @@
 import numpy as np
 from numba import njit, guvectorize
+from itertools import combinations_with_replacement, permutations
 
 
 # some useful functions
@@ -48,3 +49,13 @@ def integrand(phi, theta, ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2):
         intgd /= k**ikk
 
     return trapz(intgd, k)
+
+
+def build_index(Nfreedom):
+    ii = 0
+    index = np.zeros([3]*Nfreedom, dtype=int)
+    combin = combinations_with_replacement(range(3), Nfreedom)
+    for icount, ii in enumerate(combin):
+        for jj in permutations(ii):
+            index[jj] = icount
+    return np.atleast_1d(index)
