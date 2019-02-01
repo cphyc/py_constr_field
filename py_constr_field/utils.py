@@ -47,4 +47,4 @@ def integrand(phi, theta, ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2):
     if ikk != 0:
         intgd /= k**ikk
 
-    return np.trapz(intgd, k)
+    return trapz(intgd, k)
