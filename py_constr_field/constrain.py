@@ -22,9 +22,9 @@ def rotate_covariance(c1, c2, cov):
         return cov
 
     r = X2 - X1
-    e3 = r
-    e1 = np.array([-e3[1]-e3[2], e3[0]-e3[2], e3[0]+e3[1]])
-    e2 = np.cross(e3, e1)
+    e1 = r
+    e2 = np.array([-e1[1]-e1[2], e1[0]-e1[2], e1[0]+e1[1]])
+    e3 = np.cross(e1, e2)
 
     e1 /= np.linalg.norm(e1)
     e2 /= np.linalg.norm(e2)
@@ -47,14 +47,19 @@ def rotate_covariance(c1, c2, cov):
     if Nf2 == 0:
         ext_cov = ext_cov[..., 0]
 
-    icount = 0
+    Ndim = ext_cov.ndim
+    ii = 0
 
+    # Build the rotation using the einstein notation
+    args = [ext_cov, list(range(Ndim))]
     for i in range(Nf1):
-        ext_cov[:] = np.tensordot(ext_cov, R1, axes=(icount, 0))
-        icount += 1
+        args.extend([R1, [ii, ii+Ndim]])
+        ii += 1
     for i in range(Nf2):
-        ext_cov[:] = np.tensordot(ext_cov, R2, axes=(icount, 0))
-        icount += 1
+        args.extend([R2, [ii, ii+Ndim]])
+        ii += 1
+
+    ext_cov = np.einsum(*args)
 
     # Re-add missing dimensions
     if Nf1 == 0:
@@ -73,7 +78,7 @@ def rotate_covariance(c1, c2, cov):
             ipos = list(ii) + list(jj)
             new_cov[a, b] = ext_cov.item(*ipos)
 
-    return new_cov
+    return np.asarray(new_cov)
 
 
 def compute_covariance(c1, c2, frame='original'):
@@ -131,7 +136,7 @@ def compute_covariance(c1, c2, frame='original'):
 
             sign = s1 * s2 * (-1)**(jkx+jky+jkz)
 
-            if lkx % 2 == 1 or lky % 2 == 1:
+            if lky % 2 == 1 or lkz % 2 == 1:
                 cov[i, j] = 0
             else:
                 integral, err = dblquad(
@@ -197,6 +202,7 @@ class GradientConstrain(Constrain):
          [0, 1, 0, 0],
          [0, 0, 1, 0]]
     sign = 1
+
 
 class HessianConstrain(Constrain):
     N = [[2, 0, 0, 0],

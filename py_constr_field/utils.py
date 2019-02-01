@@ -33,7 +33,7 @@ def integrand(phi, theta, ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2):
     ky = k * sin_theta * np.sin(phi)
     kz = k * cos_theta
 
-    exppart = np.cos(kz * d - ii*np.pi/2)
+    exppart = np.cos(kx * d - ii*np.pi/2)
 
     intgd = (
         k2Pk_W1_W2 * sin_theta * exppart
