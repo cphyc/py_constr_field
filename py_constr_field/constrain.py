@@ -1,10 +1,195 @@
 '''Classes to represent linear constrains.'''
 import attr
+import numpy as np
+from scipy.integrate import dblquad
+from itertools import combinations_with_replacement, permutations
+
+from .field import FieldHandler
+from .filters import Filter
+from .utils import integrand
 
 
-@attr.s
+def rotate_covariance(c1, c2, cov):
+    '''Given a covariance matrix between two constrain, rotate it back
+    to the original frame.'''
+    X1 = c1._cfd.position.astype(np.float64)
+    X2 = c2._cfd.position.astype(np.float64)
+    Nf1 = c1._cfd.N[:, :-1].sum(axis=1)[0]
+    Nf2 = c2._cfd.N[:, :-1].sum(axis=1)[0]
+
+    r = X2 - X1
+    e3 = r
+    e1 = np.array([-e3[1]-e3[2], e3[0]-e3[2], e3[0]+e3[1]])
+    e2 = np.cross(e3, e1)
+
+    e1 /= np.linalg.norm(e1)
+    e2 /= np.linalg.norm(e2)
+    e3 /= np.linalg.norm(e3)
+    E = np.array([e1, e2, e3])
+
+    B = np.diag([1, 1, 1])
+    R1 = np.array([[np.dot(b, e) for b in B] for e in E])
+    R2 = np.array([[np.dot(b, e) for b in B] for e in E])
+
+    def build_index(Nfreedom):
+        ii = 0
+        index = np.zeros([3]*Nfreedom, dtype=int)
+        combin = combinations_with_replacement(range(3), Nfreedom)
+        for icount, ii in enumerate(combin):
+            for jj in permutations(ii):
+                index[jj] = icount
+        return np.atleast_1d(index)
+
+    index1 = build_index(Nf1)
+    index2 = build_index(Nf2)
+
+    # Unpack covariance into large tensor of shape (3, 3, ...)
+    ext_cov = cov[index1][:, index2]
+    icount = 0
+    for i in range(Nf1):
+        ext_cov[:] = np.tensordot(ext_cov, R1, axes=(icount, 0))
+        icount += 1
+    if Nf1 == 0:  # Scalar case: skip the dimension
+        icount += 1
+
+    for i in range(Nf2):
+        ext_cov[:] = np.tensordot(ext_cov, R2, axes=(icount, 0))
+        icount += 1
+
+    # Reproject into dense space
+    new_cov = np.zeros_like(cov)
+    for a, ii in enumerate(combinations_with_replacement(range(3), Nf1)):
+        for b, jj in enumerate(combinations_with_replacement(range(3), Nf2)):
+            ipos = list(ii) + list(jj)
+            new_cov[a, b] = ext_cov.item(*ipos)
+
+    return new_cov
+
+
+def compute_covariance(c1, c2, frame='original'):
+    '''Compute the covariance between two constrains.
+
+    Arguments
+    ---------
+    c1, c2 : constrain objects
+    frame : ["original" | "separation"]
+       The frame to compute covariance.
+
+    Returns
+    -------
+    cov : ndarray
+       The covariance matrix.
+
+    Notes
+    -----
+    If the frame is "original", the covariance is expressed in the
+    frame set by the constrains. If the frame is "separation", it is
+    expressed in the separation frame where the third dimension is the
+    separation one.
+    '''
+    X1 = c1._cfd.position
+    X2 = c2._cfd.position
+    r = X2 - X1
+    d = np.linalg.norm(r)
+
+    window1 = c1._filter.W
+    window2 = c2._filter.W
+
+    Pk_gen = c1._fh.Pk
+
+    k = Pk_gen.x
+    Pk = Pk_gen.y
+    k2Pk = k**2 * Pk
+
+    k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
+
+    eightpi3 = 8*np.pi**3
+
+    N1 = c1._cfd.N
+    N2 = c2._cfd.N
+    cov = np.zeros((N1.shape[0], N2.shape[0]))
+
+    s1 = c1.sign
+    s2 = c2.sign
+
+    for i, (ikx, iky, ikz, ikk) in enumerate(N1):
+        for j, (jkx, jky, jkz, jkk) in enumerate(N2):
+            lkx = ikx + jkx
+            lky = iky + jky
+            lkz = ikz + jkz
+            lkk = ikk + jkk
+
+            sign = s1 * s2 * (-1)**(jkx+jky+jkz)
+
+            if lkx % 2 == 1 or lky % 2 == 1:
+                cov[i, j] = 0
+            else:
+                integral, err = dblquad(
+                    integrand, 0, np.pi,
+                    lambda theta: 0, lambda theta: 2*np.pi,
+                    epsrel=1e-5, epsabs=1e-5,
+                    args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2))
+                cov[i, j] = sign * integral / eightpi3
+
+    return rotate_covariance(cov)
+
+
+@attr.s(frozen=True)
+class ConstrainFixedData(object):
+    position = attr.ib(converter=np.array)
+    filter = attr.ib(validator=[attr.validators.instance_of(Filter)])
+    field_handler = attr.ib(type=FieldHandler)
+    N = attr.ib(converter=np.atleast_2d)
+
+
 class Constrain(object):
-    position = attr.ib()
-    operator = attr.ib()
-    R = attr.ib()
-    filter = attr.ib()
+    value = None
+    N = None
+    frame = np.diag([1, 1, 1])
+
+    def __init__(self, position, filter, field_handler, value):
+        N = np.atleast_2d(self.N)
+        self._cfd = ConstrainFixedData(position, filter, field_handler,
+                                       N=N)
+        self._filter = filter
+        self._fh = field_handler
+        self.value = value
+
+    def __repr__(self):
+        return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
+
+    def measure(self):
+        '''Measure the value of the field for the given constrain.'''
+        raise NotImplementedError()
+
+
+class DensityConstrain(Constrain):
+    N = [0, 0, 0, 0]
+    sign = 1
+
+    def measure(self):
+        R = self._filter.radius
+        field = self._fh.get_smoothed(R)
+        grid = self._fh.get_grid()
+
+        new_shape = [-1] + [1] * (grid.ndim-1)
+        pos = self._cfd.position.reshape(*new_shape)
+        ipos = np.argwhere(np.abs((grid-pos)))
+
+        return field[ipos]
+
+
+class GradientConstrain(Constrain):
+    N = [[1, 0, 0, 0],
+         [0, 1, 0, 0],
+         [0, 0, 1, 0]]
+    sign = 1
+
+class HessianConstrain(Constrain):
+    N = [[2, 0, 0, 0],
+         [1, 1, 0, 0],
+         [1, 0, 1, 0],
+         [0, 2, 0, 0],
+         [0, 1, 1, 0],
+         [0, 0, 2, 0]]
+    sign = 1
