@@ -15,14 +15,14 @@ Pk = cosmo.matterPowerSpectrum(k)
 
 def test_constrain_initialisation():
     filter = filters.GaussianFilter(radius=5)
+    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
     c = C.Constrain(position=[0, 0, 0], filter=filter, value=1.69,
-                    field_handler=None)
+                    field_handler=fh)
     c
 
 
 def test_constrain_correlation_lag():
     fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
-    fh.precompute()
     filt = filters.GaussianFilter(radius=5)
 
     X1 = np.array([0, 0, 0])
@@ -52,7 +52,6 @@ def test_constrain_correlation_lag():
 
 def test_constrain_correlation_nolag():
     fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
-    fh.precompute()
     f1 = filters.GaussianFilter(radius=5)
     f2 = filters.GaussianFilter(radius=6)
     f3 = filters.GaussianFilter(radius=7)
@@ -80,21 +79,30 @@ def test_constrain_correlation_nolag():
     assert_allclose(cov, cov.T)
 
 def test_full_correlation():
+    f1 = filters.GaussianFilter(radius=5)
+    f2 = filters.GaussianFilter(radius=6)
+    f3 = filters.GaussianFilter(radius=7)
+
+    X1 = np.array([0, 0, 0])
+    X2 = np.array([1, 2, 3])
+    X3 = X2 * 2
+
+    # Reference
+    c = Correlator(quiet=True)
+    c.add_point(X1, ['density'], f1.radius)
+    c.add_point(X2, ['grad_delta'], f2.radius)
+    c.add_point(X3, ['hessian'], f3.radius)
+    U = Utils(c.k, c.Pk)
+    # Compute matrix of sigma
+    sigma = np.array(
+        [U.sigma(0, f1.radius)] + 
+        [U.sigma(1, f2.radius)]*3 +
+        [U.sigma(2, f3.radius)]*6)
+    S = sigma[:, None] * sigma[None, :]
+
+    ref = c.cov
+
     def test_it(use_cache):
-        f1 = filters.GaussianFilter(radius=5)
-        f2 = filters.GaussianFilter(radius=6)
-        f3 = filters.GaussianFilter(radius=7)
-
-        X1 = np.array([0, 0, 0])
-        X2 = np.array([1, 2, 3])
-        X3 = X2 * 2
-
-        # Reference
-        c = Correlator(quiet=True)
-        c.add_point(X1, ['density'], f1.radius)
-        c.add_point(X2, ['grad_delta'], f2.radius)
-        c.add_point(X3, ['hessian'], f3.radius)
-        U = Utils(c.k, c.Pk)
 
         # Note: here we use the old package's k and Pk so that their result agree can be
         # be compared
@@ -107,14 +115,6 @@ def test_full_correlation():
         fh.add_constrain(c2)
         fh.add_constrain(c3)
 
-        # Compute matrix of sigma
-        sigma = np.array(
-            [U.sigma(0, f1.radius)] + 
-            [U.sigma(1, f2.radius)]*3 +
-            [U.sigma(2, f3.radius)]*6)
-        S = sigma[:, None] * sigma[None, :]
-
-        ref = c.cov
         new = fh.compute_covariance() / S
 
         # Check closeness (note: the order may be different so only check det and eigenvalues)
@@ -128,5 +128,32 @@ def test_full_correlation():
         
         assert_allclose(eval_ref, eval_new)
 
+    # Run once first to fill cache
+    test_it(False)
     for use_cache in (True, False):
         yield test_it, use_cache
+
+
+def test_measures():
+    fh = FieldHandler(Ndim=3, Lbox=15, dimensions=16, Pk=(k, Pk))
+    f1 = filters.GaussianFilter(radius=5)
+    sfield = fh.get_smoothed(f1)
+
+    # Test density measurement
+    c = C.DensityConstrain([8, 8, 8], filter=f1, value=1, field_handler=fh)
+    val = c.measure()
+    tgt = sfield[8, 8, 8]
+    assert_allclose(val, tgt)
+
+    # Test gradient measurement
+    c = C.GradientConstrain([8, 8, 8], filter=f1, value=[0, 0, 0], field_handler=fh)
+    val = c.measure()
+    tgt = np.array(np.gradient(sfield))[:, 8, 8, 8]
+    assert_allclose(val, tgt)
+
+    # Test gradient measurement
+    c = C.HessianConstrain([8, 8, 8], filter=f1, value=[0]*6, field_handler=fh)
+    val = c.measure()
+    tgt = np.array(np.gradient(np.gradient(sfield), axis=(-3, -2, -1)))[:, :, 8, 8, 8]
+    assert_allclose(val, tgt)
+
