@@ -49,6 +49,9 @@ setup(
                       'attrs',
                       'opt_einsum'
     ],
+    extras_require={
+        'dev': ['nose', 'nose-timer']
+    },
     include_package_data=True,
     ext_modules=cythonize(cython_extensions)
 )
