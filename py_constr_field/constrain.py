@@ -4,7 +4,7 @@ import numpy as np
 from scipy.integrate import dblquad
 from itertools import combinations_with_replacement
 from opt_einsum import contract as einsum
-
+import numexpr
 
 from .field import FieldHandler
 from .filters import Filter
@@ -168,7 +168,7 @@ def compute_covariance(c1, c2, frame):
 
 @attr.s(frozen=True)
 class ConstrainFixedData(object):
-    position = attr.ib(converter=np.array)
+    position = attr.ib(converter=lambda e: np.array(e, dtype=np.float64))
     filter = attr.ib(validator=[attr.validators.instance_of(Filter)])
     field_handler = attr.ib(type=FieldHandler)
     N = attr.ib(converter=np.atleast_2d)
@@ -178,14 +178,25 @@ class Constrain(object):
     value = None
     N = None
     frame = np.diag([1, 1, 1])
+    _ipos = None
 
     def __init__(self, position, filter, field_handler, value):
         N = np.atleast_2d(self.N)
         self._cfd = ConstrainFixedData(position, filter, field_handler,
                                        N=N)
+        self.value = value
         self._filter = filter
         self._fh = field_handler
-        self.value = value
+        self._ipos = self._compute_ipos()
+
+    def _compute_ipos(self):
+        grid = self._fh.get_grid()
+
+        new_shape = [-1] + [1] * (grid.ndim-1)
+        pos = self._cfd.position.reshape(*new_shape)
+        d = numexpr.evaluate('sum((grid-pos)**2, axis=0)')
+        ipos = np.unravel_index(np.argmin(d), grid.shape[1:])
+        return ipos
 
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
@@ -203,13 +214,9 @@ class DensityConstrain(Constrain):
     sign = 1
 
     def measure(self):
-        R = self._filter.radius
-        field = self._fh.get_smoothed(R)
+        field = self._fh.get_smoothed(self._filter)
         grid = self._fh.get_grid()
-
-        new_shape = [-1] + [1] * (grid.ndim-1)
-        pos = self._cfd.position.reshape(*new_shape)
-        ipos = np.argwhere(np.abs((grid-pos)))
+        ipos = self._ipos
 
         return field[ipos]
 
@@ -220,16 +227,14 @@ class GradientConstrain(Constrain):
          [0, 0, 1, 0]]
 
     def measure(self):
-        R = self._filter.radius
-        field = self._fh.get_smoothed(R)
+        field = self._fh.get_smoothed(self._filter)
         grid = self._fh.get_grid()
+        ipos = self._ipos
 
-        new_shape = [-1] + [1] * (grid.ndim-1)
-        pos = self._cfd.position.reshape(*new_shape)
-        ipos = np.argwhere(np.abs((grid-pos)))
+        N = grid.shape[-1]
 
-        slices = [slice(i-1, i+2) for i in ipos]
-        tmp = field[slices]
+        indices = np.meshgrid(*(np.arange(i-1, i+2) % N for i in ipos), indexing='ij')
+        tmp = field[indices]
         return np.array(np.gradient(tmp))[:, 1, 1, 1]
 
 
@@ -242,17 +247,17 @@ class HessianConstrain(Constrain):
          [0, 0, 2, 0]]
 
     def measure(self):
-        R = self._filter.radius
-        field = self._fh.get_smoothed(R)
+        field = self._fh.get_smoothed(self._filter)
         grid = self._fh.get_grid()
+        ipos = self._ipos
 
-        new_shape = [-1] + [1] * (grid.ndim-1)
-        pos = self._cfd.position.reshape(*new_shape)
-        ipos = np.argwhere(np.abs((grid-pos)))
+        N = grid.shape[-1]
 
-        slices = [slice(i-2, i+3) for i in ipos]
-        tmp = field[slices]
-        return np.array(np.gradient(np.gradient(tmp)))[:, 2, 2, 2]
+        indices = np.meshgrid(*(np.arange(i-2, i+3) % N for i in ipos), indexing='ij')
+        tmp = field[indices]
+
+        gradients = np.array(np.gradient(np.gradient(tmp, axis=(-3, -2, -1)), axis=(-3, -2, -1)))
+        return gradients[:, :, 2, 2, 2]
 
 
 class ThirdDerivativeConstrain(Constrain):
