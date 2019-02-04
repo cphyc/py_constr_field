@@ -109,6 +109,7 @@ def compute_covariance(c1, c2, frame):
     r = X2 - X1
     d = np.linalg.norm(r)
     cache = c1._fh.covariance_cache
+    use_cache = c1._fh.use_covariance_cache
 
     window1 = c1._filter.W
     window2 = c2._filter.W
@@ -141,7 +142,7 @@ def compute_covariance(c1, c2, frame):
                         [lkk, d, c1._filter, c2._filter, sign])
 
             # Key already computed, use data from cache
-            if key in cache:
+            if use_cache and key in cache:
                 val = cache[key]
             elif lky % 2 == 1 or lkz % 2 == 1:
                 val = 0
@@ -156,7 +157,8 @@ def compute_covariance(c1, c2, frame):
             
             # Store value in cache
             cov[i, j] = val
-            cache[key] = val
+            if use_cache: 
+                cache[key] = val
 
     if frame == 'original':
         return rotate_covariance(c1, c2, cov)
