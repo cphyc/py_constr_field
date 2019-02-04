@@ -3,6 +3,8 @@ import attr
 import numpy as np
 from scipy.integrate import dblquad
 from itertools import combinations_with_replacement
+from opt_einsum import contract as einsum
+
 
 from .field import FieldHandler
 from .filters import Filter
@@ -59,7 +61,7 @@ def rotate_covariance(c1, c2, cov):
         args.extend([R2, [ii, ii+Ndim]])
         ii += 1
 
-    ext_cov = np.einsum(*args)
+    ext_cov = einsum(*args)
 
     # Re-add missing dimensions
     if Nf1 == 0:
@@ -106,6 +108,7 @@ def compute_covariance(c1, c2, frame='original'):
     X2 = c2._cfd.position
     r = X2 - X1
     d = np.linalg.norm(r)
+    cache = c1._fh.covariance_cache
 
     window1 = c1._filter.W
     window2 = c2._filter.W
@@ -124,9 +127,6 @@ def compute_covariance(c1, c2, frame='original'):
     N2 = c2._cfd.N
     cov = np.zeros((N1.shape[0], N2.shape[0]))
 
-    s1 = c1.sign
-    s2 = c2.sign
-
     for i, (ikx, iky, ikz, ikk) in enumerate(N1):
         for j, (jkx, jky, jkz, jkk) in enumerate(N2):
             lkx = ikx + jkx
@@ -134,21 +134,33 @@ def compute_covariance(c1, c2, frame='original'):
             lkz = ikz + jkz
             lkk = ikk + jkk
 
-            sign = s1 * s2 * (-1)**(jkx+jky+jkz)
+            sign = (-1)**(jkx+jky+jkz)
 
-            if lky % 2 == 1 or lkz % 2 == 1:
-                cov[i, j] = 0
-            else:
-                integral, err = dblquad(
+            key = tuple([lkx] +
+                        list(sorted((lky, lkz))) +
+                        [lkk, d, c1._filter, c2._filter, sign])
+
+            # Key already computed, use data from cache
+            if key in cache:
+                val = cache[key]
+            elif lky % 2 == 1 or lkz % 2 == 1:
+                val = 0
+            else:    
+                integral, _ = dblquad(
                     integrand, 0, np.pi,
                     lambda theta: 0, lambda theta: 2*np.pi,
                     epsrel=1e-5, epsabs=1e-5,
                     args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2))
-                cov[i, j] = sign * integral / eightpi3
 
-    if frame is 'original':
+                val = sign * integral / eightpi3
+            
+            # Store value in cache
+            cov[i, j] = val
+            cache[key] = val
+
+    if frame == 'original':
         return rotate_covariance(c1, c2, cov)
-    elif frame is 'separation':
+    elif frame == 'separation':
         return cov
 
 
@@ -180,6 +192,9 @@ class Constrain(object):
         '''Measure the value of the field for the given constrain.'''
         raise NotImplementedError()
 
+    def compute_covariance(self, other, frame):
+        return compute_covariance(self, other, frame)
+
 
 class DensityConstrain(Constrain):
     N = [0, 0, 0, 0]
@@ -201,7 +216,19 @@ class GradientConstrain(Constrain):
     N = [[1, 0, 0, 0],
          [0, 1, 0, 0],
          [0, 0, 1, 0]]
-    sign = 1
+
+    def measure(self):
+        R = self._filter.radius
+        field = self._fh.get_smoothed(R)
+        grid = self._fh.get_grid()
+
+        new_shape = [-1] + [1] * (grid.ndim-1)
+        pos = self._cfd.position.reshape(*new_shape)
+        ipos = np.argwhere(np.abs((grid-pos)))
+
+        slices = [slice(i-1, i+2) for i in ipos]
+        tmp = field[slices]
+        return np.array(np.gradient(tmp))[:, 1, 1, 1]
 
 
 class HessianConstrain(Constrain):
@@ -211,4 +238,29 @@ class HessianConstrain(Constrain):
          [0, 2, 0, 0],
          [0, 1, 1, 0],
          [0, 0, 2, 0]]
-    sign = 1
+
+    def measure(self):
+        R = self._filter.radius
+        field = self._fh.get_smoothed(R)
+        grid = self._fh.get_grid()
+
+        new_shape = [-1] + [1] * (grid.ndim-1)
+        pos = self._cfd.position.reshape(*new_shape)
+        ipos = np.argwhere(np.abs((grid-pos)))
+
+        slices = [slice(i-2, i+3) for i in ipos]
+        tmp = field[slices]
+        return np.array(np.gradient(np.gradient(tmp)))[:, 2, 2, 2]
+
+
+class ThirdDerivativeConstrain(Constrain):
+    N = [[3, 0, 0, 0],
+         [2, 1, 0, 0],
+         [2, 0, 1, 0],
+         [1, 2, 0, 0],
+         [1, 1, 1, 0],
+         [1, 0, 2, 0],
+         [0, 3, 0, 0],
+         [0, 2, 1, 0],
+         [0, 1, 2, 0],
+         [0, 0, 3, 0]]
