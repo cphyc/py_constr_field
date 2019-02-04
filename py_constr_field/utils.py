@@ -3,7 +3,6 @@ from numba import njit, guvectorize
 from itertools import combinations_with_replacement, permutations
 
 
-# some useful functions
 @njit
 def trapz(A, x):
     return np.sum((A[1:] + A[:-1]) / 2 * np.diff(x))
