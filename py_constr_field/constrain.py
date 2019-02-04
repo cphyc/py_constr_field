@@ -83,7 +83,7 @@ def rotate_covariance(c1, c2, cov):
     return np.asarray(new_cov)
 
 
-def compute_covariance(c1, c2, frame='original'):
+def compute_covariance(c1, c2, frame):
     '''Compute the covariance between two constrains.
 
     Arguments
