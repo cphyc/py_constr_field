@@ -5,6 +5,7 @@ from scipy.integrate import dblquad
 from itertools import combinations_with_replacement
 from opt_einsum import contract as einsum
 import numexpr
+from scipy.interpolate import interp1d
 
 from .field import FieldHandler
 from .filters import Filter
@@ -13,7 +14,12 @@ from .utils import integrand, build_index
 
 def rotate_covariance(c1, c2, cov):
     '''Given a covariance matrix between two constrain, rotate it back
-    to the original frame.'''
+    to the original frame.
+    
+    Parameter
+    ---------
+    c1, c2 : Constrain object or array.
+    '''
     X1 = c1._cfd.position.astype(np.float64)
     X2 = c2._cfd.position.astype(np.float64)
     Nf1 = c1._cfd.N[:, :-1].sum(axis=1)[0]
@@ -179,6 +185,7 @@ class Constrain(object):
     N = None
     frame = np.diag([1, 1, 1])
     _ipos = None
+    _xi = None
 
     def __init__(self, position, filter, field_handler, value):
         N = np.atleast_2d(self.N)
@@ -198,6 +205,43 @@ class Constrain(object):
         ipos = np.unravel_index(np.argmin(d), grid.shape[1:])
         return ipos
 
+    def _precompute_xi(self):
+        Rmin = self._fh.Lbox / self._fh.dimensions / 2
+        Rmax = self._fh.Lbox * np.sqrt(3)
+        distances = np.arange(Rmin, Rmax, Rmin)
+        window1 = self._filter.W
+        window2 = self._fh.filter.W
+
+        Pk_gen = self._fh.Pk
+
+        k = Pk_gen.x
+        Pk = Pk_gen.y
+        k2Pk = k**2 * Pk
+
+        k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
+
+        eightpi3 = 8*np.pi**3
+
+        N1 = self._cfd.N
+        xi = np.zeros((len(N1), distances.shape))
+
+        for i, (ikx, iky, ikz, ikk) in enumerate(N1):
+            for j, d in distances:
+                if iky % 2 == 1 or ikz % 2 == 1:
+                    val = 0
+                else:    
+                    integral, _ = dblquad(
+                        integrand, 0, np.pi,
+                        lambda theta: 0, lambda theta: 2*np.pi,
+                        epsrel=1e-5, epsabs=1e-5,
+                        args=(ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2))
+
+                    val = integral / eightpi3
+                xi[i, j] = val
+
+        # Build interpolators *in the frame of the separation*
+        self._xi = [interp1d(distances, xi[i, :], kind='quadratic') for i in range(len(N1))]
+
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
 
@@ -206,7 +250,13 @@ class Constrain(object):
         raise NotImplementedError()
 
     def compute_covariance(self, other, frame):
+        '''Compute the covariance matrice between two functional constrains.'''
         return compute_covariance(self, other, frame)
+
+    def compute_xi(self, positions):
+        '''Compute the correlation function between the current functionals
+        and the density field at a given postion.'''
+        pass        
 
 
 class DensityConstrain(Constrain):
