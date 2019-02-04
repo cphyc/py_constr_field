@@ -206,6 +206,7 @@ class Constrain(object):
         return ipos
 
     def _precompute_xi(self):
+        '''Precompute the value of the correlation function on a fixed grid'''
         Rmin = self._fh.Lbox / self._fh.dimensions / 2
         Rmax = self._fh.Lbox * np.sqrt(3)
         distances = np.arange(Rmin, Rmax, Rmin)
@@ -245,10 +246,6 @@ class Constrain(object):
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
 
-    def measure(self):
-        '''Measure the value of the field for the given constrain.'''
-        raise NotImplementedError()
-
     def compute_covariance(self, other, frame):
         '''Compute the covariance matrice between two functional constrains.'''
         return compute_covariance(self, other, frame)
@@ -257,6 +254,10 @@ class Constrain(object):
         '''Compute the correlation function between the current functionals
         and the density field at a given postion.'''
         pass        
+
+    def measure(self):
+        '''Measure the value of the field for the given constrain.'''
+        raise NotImplementedError()
 
 
 class DensityConstrain(Constrain):
