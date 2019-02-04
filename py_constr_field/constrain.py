@@ -233,7 +233,7 @@ class GradientConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = np.meshgrid(*(np.arange(i-1, i+2) % N for i in ipos), indexing='ij')
+        indices = tuple(np.meshgrid(*(np.arange(i-1, i+2) % N for i in ipos), indexing='ij'))
         tmp = field[indices]
         return np.array(np.gradient(tmp))[:, 1, 1, 1]
 
@@ -253,7 +253,7 @@ class HessianConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = np.meshgrid(*(np.arange(i-2, i+3) % N for i in ipos), indexing='ij')
+        indices = tuple(np.meshgrid(*(np.arange(i-2, i+3) % N for i in ipos), indexing='ij'))
         tmp = field[indices]
 
         gradients = np.array(np.gradient(np.gradient(tmp, axis=(-3, -2, -1)), axis=(-3, -2, -1)))
