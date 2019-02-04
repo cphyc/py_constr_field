@@ -15,15 +15,15 @@ Pk = cosmo.matterPowerSpectrum(k)
 
 def test_constrain_initialisation():
     filter = filters.GaussianFilter(radius=5)
-    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
+    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk), filter=filter)
     c = C.Constrain(position=[0, 0, 0], filter=filter, value=1.69,
                     field_handler=fh)
     c
 
 
 def test_constrain_correlation_lag():
-    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
     filt = filters.GaussianFilter(radius=5)
+    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk), filter=filt)
 
     X1 = np.array([0, 0, 0])
     X2 = np.array([1, 2, 3])
@@ -51,8 +51,8 @@ def test_constrain_correlation_lag():
 
 
 def test_constrain_correlation_nolag():
-    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk))
     f1 = filters.GaussianFilter(radius=5)
+    fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk), filter=f1)
     f2 = filters.GaussianFilter(radius=6)
     f3 = filters.GaussianFilter(radius=7)
     f4 = filters.GaussianFilter(radius=8)
@@ -106,7 +106,7 @@ def test_full_correlation():
 
         # Note: here we use the old package's k and Pk so that their result agree can be
         # be compared
-        fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(c.k, c.Pk), use_covariance_cache=use_cache)
+        fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(c.k, c.Pk), use_covariance_cache=use_cache, filter=f1)
 
         c1 = C.DensityConstrain(X1, filter=f1, value=1.69, field_handler=fh)
         c2 = C.GradientConstrain(X2, filter=f2, value=[0, 0, 0], field_handler=fh)
@@ -135,8 +135,8 @@ def test_full_correlation():
 
 
 def test_measures():
-    fh = FieldHandler(Ndim=3, Lbox=15, dimensions=16, Pk=(k, Pk))
     f1 = filters.GaussianFilter(radius=5)
+    fh = FieldHandler(Ndim=3, Lbox=15, dimensions=16, Pk=(k, Pk), filter=f1)
     sfield = fh.get_smoothed(f1)
 
     # Test density measurement
