@@ -28,7 +28,7 @@ cython_extensions = [
 #     license = f.read()
 
 setup(
-    name='correlations',
+    name='py_constr_field',
     version='0.0.1',
     description='Compute correlations functions for Gaussian Random Fields.',
     classifiers=[
@@ -44,8 +44,10 @@ setup(
     package_data={'py_constr_field': [
         'py_constr_field/*.pyx'
     ]},
-    install_requires=['numpy',
-                      'attrs'
+    install_requires=[
+                      'numpy',
+                      'attrs',
+                      'opt_einsum'
     ],
     include_package_data=True,
     ext_modules=cythonize(cython_extensions)
