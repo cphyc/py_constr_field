@@ -173,8 +173,7 @@ def test_xi():
     c_hess = C.HessianConstrain([0, 0, 0], filter=WG, field_handler=fh, value=None)
 
     order = [0, 3, 5, 1, 2, 4]
-    ans = (c_hess.xi(positions) / (fh.sigma(0) * fh.sigma(2)))[:, 0, order]
+    ans = (c_hess.xi(positions) / (fh.sigma(0) * fh.sigma(2)))[:, 0, order].T
 
     # Check
-    assert_allclose(ref, ans, rtol=1e-2)
-
+    assert_allclose(ref, ans, rtol=5e-2)

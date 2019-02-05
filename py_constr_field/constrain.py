@@ -173,7 +173,7 @@ class Constrain(object):
             distances = [0, Rmax]
             y = list(compute_xi(distances, ikx, iky, ikz, ikk))
 
-            # Find largest R so that xi(R) ~ xi(0)/100
+            # Find distance at which the correlation vanishes
             norm = sigma2
             diff = np.abs(y[-1] / norm)
             while diff > 1e-2:
@@ -189,7 +189,7 @@ class Constrain(object):
             distances = np.asarray(distances)[order]
             y = np.asarray(y)[order]
 
-            # Find grid of R between 0 and Rmax so that the difference is at most 5%
+            # Refine until dx and the variation between two steps are small enough
             dx = np.diff(distances)
             norm = min(np.abs(y.ptp()), sigma2)
             dy_o_sigma = np.abs(np.diff(y) / norm)
@@ -215,7 +215,7 @@ class Constrain(object):
                 print(f'Computing {mask.sum()}/{mask.shape[0]} new point '
                       f'(norm={norm:.3f}, sigma²={sigma2:.3f})')
 
-            self._xi[i] = interp1d(distances, y, kind='linear', bounds_error=False, fill_value=0)
+            self._xi[i] = interp1d(distances, y, kind='quadratic', bounds_error=False, fill_value=0)
 
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
@@ -233,7 +233,7 @@ class Constrain(object):
 
         X0 = self._cfd.position
         def loc(positions):
-            positions = np.atleast_2d(positions).reshape(-1, 1)
+            positions = np.atleast_2d(positions).reshape(-1, 3)
 
             d = np.linalg.norm(X0 - positions, axis=-1)
 
