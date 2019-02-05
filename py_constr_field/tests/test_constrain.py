@@ -151,9 +151,30 @@ def test_measures():
     tgt = np.array(np.gradient(sfield))[:, 8, 8, 8]
     assert_allclose(val, tgt)
 
-    # Test gradient measurement
+    # Test hessian measurement
     c = C.HessianConstrain([8, 8, 8], filter=f1, value=[0]*6, field_handler=fh)
     val = c.measure()
     tgt = np.array(np.gradient(np.gradient(sfield), axis=(-3, -2, -1)))[:, :, 8, 8, 8]
     assert_allclose(val, tgt)
+
+def test_xi():
+    positions = np.random.rand(10, 3) * 20
+
+    # Build reference
+    c = Correlator(quiet=True)
+    c.add_point([0, 0, 0], ['hessian'], 5)
+    for x in positions:
+        c.add_point(x, ['delta'], 5)
+    ref = c.cov[:6, 6:]
+
+    # Build answer
+    WG = filters.GaussianFilter(radius=5)
+    fh = FieldHandler(Ndim=3, Lbox=2, dimensions=128, filter=WG, Pk=(c.k, c.Pk))
+    c_hess = C.HessianConstrain([0, 0, 0], filter=WG, field_handler=fh, value=None)
+
+    order = [0, 3, 5, 1, 2, 4]
+    ans = (c_hess.xi(positions) / (fh.sigma(0) * fh.sigma(2)))[:, 0, order]
+
+    # Check
+    assert_allclose(ref, ans, rtol=1e-2)
 

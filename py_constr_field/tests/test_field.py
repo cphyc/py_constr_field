@@ -1,8 +1,9 @@
 from colossus.cosmology import cosmology
 from numpy.testing import assert_allclose
 import numpy as np
+from correlations.correlations import Correlator
 
-from py_constr_field import filters
+from py_constr_field import filters, constrain
 from py_constr_field.field import FieldHandler
 
 cosmo = cosmology.setCosmology('planck18')
@@ -21,7 +22,4 @@ def test_sigma():
 
     for i in range(-5, 5):
         yield test_sigma_n, i
-
-def test_std():
-    # TODO: test that the variance of the field is 0.81 at 8Mpc
-    pass
+    
