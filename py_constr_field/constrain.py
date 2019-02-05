@@ -3,92 +3,13 @@ import attr
 import numpy as np
 from scipy.integrate import dblquad
 from itertools import combinations_with_replacement
-from opt_einsum import contract as einsum
 import numexpr
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
 from .field import FieldHandler
 from .filters import Filter
-from .utils import integrand, build_index
-
-
-def rotate_covariance(c1, c2, cov):
-    '''Given a covariance matrix between two constrain, rotate it back
-    to the original frame.
-
-    Parameter
-    ---------
-    c1, c2 : Constrain object or array.
-    '''
-    X1 = c1._cfd.position.astype(np.float64)
-    X2 = c2._cfd.position.astype(np.float64)
-    Nf1 = c1._cfd.N[:, :-1].sum(axis=1)[0]
-    Nf2 = c2._cfd.N[:, :-1].sum(axis=1)[0]
-
-    # Nothing to do for scalars or at zero separation
-    if (Nf1 == 0 and Nf2 == 0) or np.all(X1 == X2):
-        return cov
-
-    r = X2 - X1
-    e1 = r
-    e2 = np.array([-e1[1]-e1[2], e1[0]-e1[2], e1[0]+e1[1]])
-    e3 = np.cross(e1, e2)
-
-    e1 /= np.linalg.norm(e1)
-    e2 /= np.linalg.norm(e2)
-    e3 /= np.linalg.norm(e3)
-    E = np.array([e1, e2, e3])
-
-    B = np.diag([1, 1, 1])
-    R1 = np.array([[np.dot(b, e) for b in B] for e in E])
-    R2 = np.array([[np.dot(b, e) for b in B] for e in E])
-
-    index1 = build_index(Nf1)
-    index2 = build_index(Nf2)
-
-    # Unpack covariance into large tensor of shape (3, 3, ...)
-    ext_cov = cov[:, index2][index1, ...]
-
-    # Drop useless dimensions
-    if Nf1 == 0:
-        ext_cov = ext_cov[0, ...]
-    if Nf2 == 0:
-        ext_cov = ext_cov[..., 0]
-
-    Ndim = ext_cov.ndim
-    ii = 0
-
-    # Build the rotation using the einstein notation
-    args = [ext_cov, list(range(Ndim))]
-    for i in range(Nf1):
-        args.extend([R1, [ii, ii+Ndim]])
-        ii += 1
-    for i in range(Nf2):
-        args.extend([R2, [ii, ii+Ndim]])
-        ii += 1
-
-    ext_cov = einsum(*args)
-
-    # Re-add missing dimensions
-    if Nf1 == 0:
-        ext_cov = ext_cov[None, ...]
-    if Nf2 == 0:
-        ext_cov = ext_cov[..., None]
-
-    # Reproject into dense space
-    new_cov = np.zeros_like(cov)
-    for a, ii in enumerate(combinations_with_replacement(range(3), Nf1)):
-        if Nf1 == 0:
-            ii = [0]
-        for b, jj in enumerate(combinations_with_replacement(range(3), Nf2)):
-            if Nf2 == 0:
-                jj = [0]
-            ipos = list(ii) + list(jj)
-            new_cov[a, b] = ext_cov.item(*ipos)
-
-    return np.asarray(new_cov)
-
+from .utils import integrand, build_index, rotate_covariance, rotate_xi
 
 def compute_covariance(c1, c2, frame):
     '''Compute the covariance between two constrains.
@@ -301,10 +222,24 @@ class Constrain(object):
         '''Compute the covariance matrice between two functional constrains.'''
         return compute_covariance(self, other, frame)
 
-    def compute_xi(self, positions):
-        '''Compute the correlation function between the current functionals
-        and the density field at a given postion.'''
-        pass
+    @property
+    def xi(self):
+        '''Compute the correlation function between the current functional
+        and the density field at given positions.'''
+        if self._xi is None:
+            self._precompute_xi()
+
+        X0 = self._cfd.position
+        def loc(positions):
+            positions = np.atleast_2d(positions).reshape(-1, 1)
+
+            d = np.linalg.norm(X0 - positions, axis=-1)
+
+            xi = np.array([xi(d)[..., None, :] for xi in self._xi.values()]).T
+            return rotate_xi(self, positions, xi)
+
+        return loc
+
 
     def measure(self):
         '''Measure the value of the field for the given constrain.'''
