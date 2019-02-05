@@ -264,7 +264,6 @@ class DensityConstrain(Constrain):
 
     def measure(self):
         field = self._fh.get_smoothed(self._filter)
-        grid = self._fh.get_grid()
         ipos = self._ipos
 
         return field[ipos]

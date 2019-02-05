@@ -116,10 +116,10 @@ def rotate_covariance(c1, c2, cov):
 
     # Build the rotation using the einstein notation
     args = [extended_cov, list(range(Ndim))]
-    for i in range(Nf1):
+    for _ in range(Nf1):
         args.extend([R1, [ii, ii+Ndim]])
         ii += 1
-    for i in range(Nf2):
+    for _ in range(Nf2):
         args.extend([R2, [ii, ii+Ndim]])
         ii += 1
 
