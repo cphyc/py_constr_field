@@ -3,6 +3,8 @@ import numpy as np
 import attr
 import pyfftw.interfaces.numpy_fft as fft
 from scipy.interpolate import interp1d
+from collections import namedtuple
+from opt_einsum import contract_path, contract
 
 
 def build_1dinterpolator(arg):
@@ -41,8 +43,9 @@ class FieldHandler(object):
 
     _smoothed = attr.ib(factory=dict)
     _grid = attr.ib(default=None)
+    _xi = attr.ib(default=None)
+    _covariance = attr.ib(default=None)
 
-    covariance = attr.ib(default=None)
     covariance_cache = attr.ib(factory=dict)
     use_covariance_cache = attr.ib(default=True)
 
@@ -135,10 +138,14 @@ class FieldHandler(object):
         ----------
         constrain : Constrain object
            The object describing the constrain.'''
+        self._covariance = None
         self.constrains.append(constrain)
 
     def compute_covariance(self, frame='original'):
         '''Compute the covariance between the constrain points.'''
+        if self._covariance is not None:
+            return self._covariance
+            
         data = dict()
         for i1, c1 in enumerate(self.constrains):
             for i2, c2 in enumerate(self.constrains):
@@ -149,10 +156,67 @@ class FieldHandler(object):
                 data[i2, i1] = tmp
 
         Nc = len(self.constrains)
-        return np.block([[data[i1, i2] for i1 in range(Nc)] for i2 in range(Nc)])
+        self._covariance = np.block([[data[i1, i2] for i1 in range(Nc)] for i2 in range(Nc)])
+        return self._covariance
 
+    def compute_xi(self):
+        '''Compute the correlation function between the constrain and the field'''
+        if self._xi is not None:
+            return self._xi
+        xi = []
+        pos = np.swapaxes(self.get_grid(), 0, -1).copy()
+        for c in self.constrains:
+            xi.append(c.xi(pos))
+        self._xi = np.concatenate(xi, axis=-1)[:, 0, :].copy()
+        return self._xi
+
+    def get_constrained(self, filter, std_target):
+        self.normalize(filter, std_target)
+        xi = self.compute_xi()
+        xij = self.compute_covariance()
+        xij_inv = np.linalg.inv(xij)
+
+        # Get measured value at constrain location
+        ctilde = []
+        c0 = []
+        for c in self.constrains:
+            val = c.measure_compact()
+            ctilde.append(val)
+            c0.append(np.atleast_1d(c.value))
+
+        ctilde = np.concatenate(ctilde)
+        c0 = np.concatenate(c0)
+
+        # Maks nan values in constrain
+        mask = ~np.isnan(c0)
+
+        xi = xi[:, mask]
+        xij = xij[:, mask][mask, :]
+        xij_inv = xij_inv[:, mask][mask, :]
+        c0 = c0[mask]
+        ctilde = ctilde[mask]
+
+        print(f'Applying {mask.sum()} constrains')
+
+        # Compute constrained field
+        ftilde = self.white_noise.flatten()
+
+        path, _ = contract_path('ai,ij,bj->ba', xi, xij_inv, [ctilde, ctilde], optimize='optimal')
+        ftilde_bar, f_bar = contract('ai,ij,bj->ba', xi, xij_inv, [ctilde, c0], optimize=path)
+
+        f = ftilde + f_bar - ftilde_bar
+
+        shape = (128, 128, 128)
+        f = f.reshape(shape)
+        ftilde = ftilde.reshape(shape)
+        ftilde_bar = ftilde_bar.reshape(shape)
+        f_bar = f_bar.reshape(shape)
+
+        ConstrainedField = namedtuple('ConstrainedField', ['f', 'ftilde', 'f_bar', 'ftilde_bar'])
+
+        return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar)
+        
     def sigma(self, N):
-        k2Pk = self._k2Pk
         k = self.Pk.x
         Pk = self.Pk.y
 
