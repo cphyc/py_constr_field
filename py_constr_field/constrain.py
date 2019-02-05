@@ -16,7 +16,7 @@ from .utils import integrand, build_index
 def rotate_covariance(c1, c2, cov):
     '''Given a covariance matrix between two constrain, rotate it back
     to the original frame.
-    
+
     Parameter
     ---------
     c1, c2 : Constrain object or array.
@@ -153,7 +153,7 @@ def compute_covariance(c1, c2, frame):
                 val = cache[key]
             elif lky % 2 == 1 or lkz % 2 == 1:
                 val = 0
-            else:    
+            else:
                 integral, _ = dblquad(
                     integrand, 0, np.pi,
                     lambda theta: 0, lambda theta: 2*np.pi,
@@ -161,10 +161,10 @@ def compute_covariance(c1, c2, frame):
                     args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2))
 
                 val = sign * integral / eightpi3
-            
+
             # Store value in cache
             cov[i, j] = val
-            if use_cache: 
+            if use_cache:
                 cache[key] = val
 
     if frame == 'original':
@@ -196,6 +196,7 @@ class Constrain(object):
         self._filter = filter
         self._fh = field_handler
         self._ipos = self._compute_ipos()
+        self.N = np.asarray(self.N)
 
     def _compute_ipos(self):
         grid = self._fh.get_grid()
@@ -206,14 +207,11 @@ class Constrain(object):
         ipos = np.unravel_index(np.argmin(d), grid.shape[1:])
         return ipos
 
-    def _precompute_xi(self):
+    def _precompute_xi(self, rtol=1e-2):
         '''Precompute the value of the correlation function on a fixed grid'''
         Rmin = min(self._filter.radius, self._fh.filter.radius)
         Rmax = max(self._filter.radius, self._fh.filter.radius)
-        distances = np.concatenate((
-            [0],
-            list(np.arange(Rmin / 10, Rmax * 10, Rmin / 10)),
-            [self._fh.Lbox * np.sqrt(3)]))
+
         window1 = self._filter.W
         window2 = self._fh.filter.W
 
@@ -228,24 +226,73 @@ class Constrain(object):
         eightpi3 = 8*np.pi**3
 
         N1 = self._cfd.N
-        xi = np.zeros(N1.shape[1:] + distances.shape)
+        self._xi = {}
+
+        @np.vectorize
+        def compute_xi(d, ikx, iky, ikz, ikk):
+            integral, _ = dblquad(
+                integrand, 0, np.pi,
+                lambda theta: 0, lambda theta: 2*np.pi,
+                epsrel=1e-5, epsabs=1e-5,
+                args=(ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2))
+
+            val = integral / eightpi3
+            return val
 
         for i, (ikx, iky, ikz, ikk) in enumerate(N1):
-            for j, d in enumerate(tqdm(distances)):
-                if iky % 2 == 1 or ikz % 2 == 1:
-                    val = 0
-                else:    
-                    integral, _ = dblquad(
-                        integrand, 0, np.pi,
-                        lambda theta: 0, lambda theta: 2*np.pi,
-                        epsrel=1e-5, epsabs=1e-5,
-                        args=(ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2))
+            if iky % 2 == 1 or ikz % 2 == 1:
+                self._xi[i] = interp1d([0, 1e5], [0, 0])
+                continue
 
-                    val = integral / eightpi3
-                xi[i, j] = val
+            N = ikx + iky + ikz - ikk
+            sigma2 = self._fh.sigma(N/2)**2
 
-        # Build interpolators *in the frame of the separation*
-        self._xi = [interp1d(distances, xi[i, :], kind='linear') for i in range(len(N1))]
+            distances = [0, Rmax]
+            y = list(compute_xi(distances, ikx, iky, ikz, ikk))
+
+            # Find largest R so that xi(R) ~ xi(0)/100
+            norm = sigma2
+            diff = np.abs(y[-1] / norm)
+            while diff > 1e-2:
+                new_dmax = distances[-1]*1.5
+                print(f'Increasing dmax={new_dmax:.3f} (diff={diff:.3f}, '
+                      f'ylast={y[-1]:.3f}, sigma²={sigma2:.3f})')
+                distances.append(new_dmax)
+                y.append(compute_xi(new_dmax, ikx, iky, ikz, ikk))
+                norm = min(np.abs(np.ptp(y)), sigma2)
+                diff = np.abs(y[-1] / norm)
+
+            order = np.argsort(distances)
+            distances = np.asarray(distances)[order]
+            y = np.asarray(y)[order]
+
+            # Find grid of R between 0 and Rmax so that the difference is at most 5%
+            dx = np.diff(distances)
+            norm = min(np.abs(y.ptp()), sigma2)
+            dy_o_sigma = np.abs(np.diff(y) / norm)
+            mask = (dx > Rmin / 5) | (dy_o_sigma > rtol)
+            while mask.sum() > 0 and len(distances) < 1000:
+                i0 = np.argwhere(mask).flatten()
+                i1 = i0 + 1
+
+                new_d = (distances[i0] + distances[i1]) / 2
+                new_y = compute_xi(new_d, ikx, iky, ikz, ikk)
+
+                distances = np.concatenate((distances, new_d))
+                order = np.argsort(distances)
+
+                # Sort arrays
+                y = np.concatenate((y, new_y))[order]
+                distances = distances[order]
+
+                dx = np.diff(distances)
+                norm = min(np.abs(y.ptp()), sigma2)
+                dy_o_sigma = np.abs(np.diff(y) / norm)
+                mask = (dx > Rmin / 5) | (dy_o_sigma > rtol)
+                print(f'Computing {mask.sum()}/{mask.shape[0]} new point '
+                      f'(norm={norm:.3f}, sigma²={sigma2:.3f})')
+
+            self._xi[i] = interp1d(distances, y, kind='linear', bounds_error=False, fill_value=0)
 
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
@@ -257,7 +304,7 @@ class Constrain(object):
     def compute_xi(self, positions):
         '''Compute the correlation function between the current functionals
         and the density field at a given postion.'''
-        pass        
+        pass
 
     def measure(self):
         '''Measure the value of the field for the given constrain.'''
@@ -288,7 +335,8 @@ class GradientConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = tuple(np.meshgrid(*(np.arange(i-1, i+2) % N for i in ipos), indexing='ij'))
+        indices = tuple(np.meshgrid(*(np.arange(i-1, i+2) %
+                                      N for i in ipos), indexing='ij'))
         tmp = field[indices]
         return np.array(np.gradient(tmp))[:, 1, 1, 1]
 
@@ -308,10 +356,12 @@ class HessianConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = tuple(np.meshgrid(*(np.arange(i-2, i+3) % N for i in ipos), indexing='ij'))
+        indices = tuple(np.meshgrid(*(np.arange(i-2, i+3) %
+                                      N for i in ipos), indexing='ij'))
         tmp = field[indices]
 
-        gradients = np.array(np.gradient(np.gradient(tmp, axis=(-3, -2, -1)), axis=(-3, -2, -1)))
+        gradients = np.array(np.gradient(np.gradient(
+            tmp, axis=(-3, -2, -1)), axis=(-3, -2, -1)))
         return gradients[:, :, 2, 2, 2]
 
 
