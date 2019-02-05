@@ -13,11 +13,14 @@ def test_sigma():
     filt = filters.GaussianFilter(radius=5)
     fh = FieldHandler(Ndim=3, Lbox=50, dimensions=16, Pk=(k, Pk), filter=filt)
     
-    for i in (0, 1, 2):
+    def test_sigma_n(i):
         got = fh.sigma(i)
-        expected = np.sqrt(np.trapz(k**(2+i) * Pk / (2*np.pi**2), k))
+        expected = np.sqrt(np.trapz(k**(2+2*i) * Pk * filt.W(k)**2, k) / (2*np.pi**2))
 
         assert_allclose(got, expected)
+
+    for i in range(-5, 5):
+        yield test_sigma_n, i
 
 def test_std():
     # TODO: test that the variance of the field is 0.81 at 8Mpc
