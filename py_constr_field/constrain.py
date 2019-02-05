@@ -6,6 +6,7 @@ from itertools import combinations_with_replacement
 from opt_einsum import contract as einsum
 import numexpr
 from scipy.interpolate import interp1d
+from tqdm import tqdm
 
 from .field import FieldHandler
 from .filters import Filter
@@ -207,9 +208,12 @@ class Constrain(object):
 
     def _precompute_xi(self):
         '''Precompute the value of the correlation function on a fixed grid'''
-        Rmin = self._fh.Lbox / self._fh.dimensions / 2
-        Rmax = self._fh.Lbox * np.sqrt(3)
-        distances = np.arange(Rmin, Rmax, Rmin)
+        Rmin = min(self._filter.radius, self._fh.filter.radius)
+        Rmax = max(self._filter.radius, self._fh.filter.radius)
+        distances = np.concatenate((
+            [0],
+            list(np.arange(Rmin / 10, Rmax * 10, Rmin / 10)),
+            [self._fh.Lbox * np.sqrt(3)]))
         window1 = self._filter.W
         window2 = self._fh.filter.W
 
@@ -224,10 +228,10 @@ class Constrain(object):
         eightpi3 = 8*np.pi**3
 
         N1 = self._cfd.N
-        xi = np.zeros((len(N1), distances.shape))
+        xi = np.zeros(N1.shape[1:] + distances.shape)
 
         for i, (ikx, iky, ikz, ikk) in enumerate(N1):
-            for j, d in distances:
+            for j, d in enumerate(tqdm(distances)):
                 if iky % 2 == 1 or ikz % 2 == 1:
                     val = 0
                 else:    
@@ -241,7 +245,7 @@ class Constrain(object):
                 xi[i, j] = val
 
         # Build interpolators *in the frame of the separation*
-        self._xi = [interp1d(distances, xi[i, :], kind='quadratic') for i in range(len(N1))]
+        self._xi = [interp1d(distances, xi[i, :], kind='linear') for i in range(len(N1))]
 
     def __repr__(self):
         return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
