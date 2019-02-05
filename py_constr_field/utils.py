@@ -230,7 +230,7 @@ def rotate_xi(c, positions, xi0):
         for b, jj in enumerate(combinations_with_replacement(range(3), Nf2)):
             if Nf2 == 0:
                 jj = [0]
-            ipos = list(ii) + list(jj)
-            xi[..., a, b] = extended_xi[[...] + ipos]
+            ipos = tuple([...] + list(ii) + list(jj))
+            xi[..., a, b] = extended_xi[ipos]
 
     return xi

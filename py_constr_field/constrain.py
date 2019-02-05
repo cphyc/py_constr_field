@@ -117,7 +117,7 @@ class Constrain(object):
         self._filter = filter
         self._fh = field_handler
         self._ipos = self._compute_ipos()
-        self.N = np.asarray(self.N)
+        self.N = np.atleast_2d(self.N)
 
     def _compute_ipos(self):
         grid = self._fh.get_grid()
@@ -133,7 +133,6 @@ class Constrain(object):
     def _precompute_xi(self, rtol=1e-2):
         '''Precompute the value of the correlation function on a fixed grid'''
         Rmin = min(self._filter.radius, self._fh.filter.radius)
-        Rmax = max(self._filter.radius, self._fh.filter.radius)
 
         window1 = self._filter.W
         window2 = self._fh.filter.W
@@ -170,13 +169,13 @@ class Constrain(object):
             N = ikx + iky + ikz - ikk
             sigma2 = self._fh.sigma(N/2)**2
 
-            distances = [0, Rmax]
+            distances = [0, self._fh.Lbox * np.sqrt(3) / 2]
             y = list(compute_xi(distances, ikx, iky, ikz, ikk))
 
             # Find distance at which the correlation vanishes
             norm = sigma2
             diff = np.abs(y[-1] / norm)
-            while diff > 1e-2:
+            while diff > rtol:
                 new_dmax = distances[-1]*1.5
                 print(f'Increasing dmax={new_dmax:.3f} (diff={diff:.3f}, '
                       f'ylast={y[-1]:.3f}, sigma²={sigma2:.3f})')
@@ -193,7 +192,7 @@ class Constrain(object):
             dx = np.diff(distances)
             norm = min(np.abs(y.ptp()), sigma2)
             dy_o_sigma = np.abs(np.diff(y) / norm)
-            mask = (dx > Rmin / 5) | (dy_o_sigma > rtol)
+            mask = (dx > Rmin / 2) | (dy_o_sigma > rtol)
             while mask.sum() > 0 and len(distances) < 1000:
                 i0 = np.argwhere(mask).flatten()
                 i1 = i0 + 1
@@ -211,7 +210,7 @@ class Constrain(object):
                 dx = np.diff(distances)
                 norm = min(np.abs(y.ptp()), sigma2)
                 dy_o_sigma = np.abs(np.diff(y) / norm)
-                mask = (dx > Rmin / 5) | (dy_o_sigma > rtol)
+                mask = (dx > Rmin / 2) | (dy_o_sigma > rtol)
                 print(f'Computing {mask.sum()}/{mask.shape[0]} new point '
                       f'(norm={norm:.3f}, sigma²={sigma2:.3f})')
 
@@ -233,7 +232,9 @@ class Constrain(object):
 
         X0 = self._cfd.position
         def loc(positions):
-            positions = np.atleast_2d(positions).reshape(-1, 3)
+            tmp = np.atleast_2d((positions))
+            assert tmp.shape[-1] == 3
+            positions = tmp.reshape(-1, 3)
 
             d = np.linalg.norm(X0 - positions, axis=-1)
 
@@ -242,6 +243,15 @@ class Constrain(object):
 
         return loc
 
+    def measure_compact(self):
+        '''Measure the value of the field for the given constrain and return
+        its independant component.'''
+        val = self.measure()
+        Nfreedom = self.N[0, :-1].sum()
+        out = []
+        for i0 in combinations_with_replacement(range(3), Nfreedom):
+            out.append(val[i0])
+        return np.array(out)
 
     def measure(self):
         '''Measure the value of the field for the given constrain.'''
@@ -275,7 +285,8 @@ class GradientConstrain(Constrain):
         indices = tuple(np.meshgrid(*(np.arange(i-1, i+2) %
                                       N for i in ipos), indexing='ij'))
         tmp = field[indices]
-        return np.array(np.gradient(tmp))[:, 1, 1, 1]
+        dx = self._fh.Lbox / self._fh.dimensions
+        return np.array(np.gradient(tmp, dx))[..., 1, 1, 1]
 
 
 class HessianConstrain(Constrain):
@@ -296,10 +307,10 @@ class HessianConstrain(Constrain):
         indices = tuple(np.meshgrid(*(np.arange(i-2, i+3) %
                                       N for i in ipos), indexing='ij'))
         tmp = field[indices]
-
+        dx = self._fh.Lbox / self._fh.dimensions
         gradients = np.array(np.gradient(np.gradient(
-            tmp, axis=(-3, -2, -1)), axis=(-3, -2, -1)))
-        return gradients[:, :, 2, 2, 2]
+            tmp, dx, axis=(-3, -2, -1)), dx, axis=(-3, -2, -1)))
+        return gradients[..., 2, 2, 2]
 
 
 class ThirdDerivativeConstrain(Constrain):
@@ -313,3 +324,20 @@ class ThirdDerivativeConstrain(Constrain):
          [0, 2, 1, 0],
          [0, 1, 2, 0],
          [0, 0, 3, 0]]
+
+    def measure(self):
+        field = self._fh.get_smoothed(self._filter)
+        grid = self._fh.get_grid()
+        ipos = self._ipos
+
+        N = grid.shape[-1]
+
+        indices = tuple(np.meshgrid(*(np.arange(i-3, i+4) %
+                                      N for i in ipos), indexing='ij'))
+        tmp = field[indices]
+        dx = self._fh.Lbox / self._fh.dimensions
+        gradients = np.array(np.gradient(np.gradient(np.gradient(
+                    tmp, dx, axis=(-3, -2, -1)),
+                dx, axis=(-3, -2, -1)),
+            dx, axis=(-3, -2, -1)))
+        return gradients[..., 3, 3, 3]
