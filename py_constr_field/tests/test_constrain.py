@@ -137,6 +137,7 @@ def test_full_correlation():
 def test_measures():
     f1 = filters.GaussianFilter(radius=5)
     fh = FieldHandler(Ndim=3, Lbox=15, dimensions=16, Pk=(k, Pk), filter=f1)
+    dx = fh.Lbox / fh.dimensions
     sfield = fh.get_smoothed(f1)
 
     # Test density measurement
@@ -148,13 +149,13 @@ def test_measures():
     # Test gradient measurement
     c = C.GradientConstrain([8, 8, 8], filter=f1, value=[0, 0, 0], field_handler=fh)
     val = c.measure()
-    tgt = np.array(np.gradient(sfield))[:, 8, 8, 8]
+    tgt = np.array(np.gradient(sfield, dx))[:, 8, 8, 8]
     assert_allclose(val, tgt)
 
     # Test hessian measurement
     c = C.HessianConstrain([8, 8, 8], filter=f1, value=[0]*6, field_handler=fh)
     val = c.measure()
-    tgt = np.array(np.gradient(np.gradient(sfield), axis=(-3, -2, -1)))[:, :, 8, 8, 8]
+    tgt = np.array(np.gradient(np.gradient(sfield, dx), dx, axis=(-3, -2, -1)))[:, :, 8, 8, 8]
     assert_allclose(val, tgt)
 
 def test_xi():
