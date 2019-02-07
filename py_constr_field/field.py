@@ -192,14 +192,14 @@ class FieldHandler(object):
 
         xi = xi[:, mask]
         xij = xij[:, mask][mask, :]
-        xij_inv = xij_inv[:, mask][mask, :]
+        xij_inv = np.linalg.inv(xij)
         c0 = c0[mask]
         ctilde = ctilde[mask]
 
         print(f'Applying {mask.sum()} constrains')
 
         # Compute constrained field
-        ftilde = self.white_noise.flatten()
+        ftilde = self.get_smoothed(self.filter).flatten()
 
         path, _ = contract_path('ai,ij,bj->ba', xi, xij_inv, [ctilde, ctilde], optimize='optimal')
         ftilde_bar, f_bar = contract('ai,ij,bj->ba', xi, xij_inv, [ctilde, c0], optimize=path)
@@ -212,9 +212,10 @@ class FieldHandler(object):
         ftilde_bar = ftilde_bar.reshape(shape)
         f_bar = f_bar.reshape(shape)
 
-        ConstrainedField = namedtuple('ConstrainedField', ['f', 'ftilde', 'f_bar', 'ftilde_bar'])
+        ConstrainedField = namedtuple('ConstrainedField', ['f', 'ftilde', 'f_bar', 'ftilde_bar', 'ctilde'])
 
-        return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar)
+        return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar,
+                                ctilde=ctilde)
         
     def sigma(self, N):
         k = self.Pk.x

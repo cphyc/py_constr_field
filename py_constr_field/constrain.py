@@ -120,6 +120,12 @@ class Constrain(object):
         self.N = np.atleast_2d(self.N)
 
     def _compute_ipos(self):
+        '''Find the position of the constrain on the grid.'''
+        pos = self._cfd.position
+        fh = self._fh
+
+        ipos = pos / fh.Lbox * fh.dimensions
+
         grid = self._fh.get_grid()
 
         new_shape = [-1] + [1] * (grid.ndim-1)
@@ -150,6 +156,8 @@ class Constrain(object):
         N1 = self._cfd.N
         self._xi = {}
 
+        cache = {}  # A cache of values of xi
+
         @np.vectorize
         def compute_xi(d, ikx, iky, ikz, ikk):
             integral, _ = dblquad(
@@ -162,9 +170,19 @@ class Constrain(object):
             return val
 
         for i, (ikx, iky, ikz, ikk) in enumerate(N1):
+            # Early exit if power of k in y/z direction is odd
             if iky % 2 == 1 or ikz % 2 == 1:
+                print(f'{self}: precomputing->{ikx},{iky},{ikz} — component is null')
                 self._xi[i] = interp1d([0, 1e5], [0, 0])
                 continue
+            # Lookup in cache if similar entry exists
+            key = tuple([ikx] + sorted((iky, ikk)) + [ikk])
+            if key in cache:
+                print(f'{self}: precomputing->{ikx},{iky},{ikz} — found item in cache with key {key}')
+                self._xi[i] = cache[key]
+                continue
+
+            print(f'{self}: precomputing->{ikx},{iky},{ikz}')
 
             N = ikx + iky + ikz - ikk
             sigma2 = self._fh.sigma(N/2)**2
@@ -177,7 +195,7 @@ class Constrain(object):
             diff = np.abs(y[-1] / norm)
             while diff > rtol:
                 new_dmax = distances[-1]*1.5
-                print(f'Increasing dmax={new_dmax:.3f} (diff={diff:.3f}, '
+                print(f'\tIncreasing dmax={new_dmax:.3f} (diff={diff:.3f}, '
                       f'ylast={y[-1]:.3f}, sigma²={sigma2:.3f})')
                 distances.append(new_dmax)
                 y.append(compute_xi(new_dmax, ikx, iky, ikz, ikk))
@@ -211,13 +229,14 @@ class Constrain(object):
                 norm = min(np.abs(y.ptp()), sigma2)
                 dy_o_sigma = np.abs(np.diff(y) / norm)
                 mask = (dx > Rmin / 2) | (dy_o_sigma > rtol)
-                print(f'Computing {mask.sum()}/{mask.shape[0]} new point '
+                print(f'\tComputing {mask.sum()}/{mask.shape[0]} new point '
                       f'(norm={norm:.3f}, sigma²={sigma2:.3f})')
 
             self._xi[i] = interp1d(distances, y, kind='quadratic', bounds_error=False, fill_value=0)
+            cache[key] = self._xi[i]
 
     def __repr__(self):
-        return '<Constrain: %s, v=%s>' % (self.__class__.__name__, self.value)
+        return '<Constrain: %s, filter=%s X=%s>' % (self.__class__.__name__, self._filter, self._cfd.position)
 
     def compute_covariance(self, other, frame):
         '''Compute the covariance matrice between two functional constrains.'''

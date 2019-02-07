@@ -1,5 +1,6 @@
 import attr
 import numpy as np
+import numexpr as ne
 
 from .utils import WTH
 
@@ -33,7 +34,9 @@ class GaussianFilter(Filter):
         Returns
         -------
         W : float or ndarray'''
-        return np.exp(-(k*self.radius)**2/2)
+        radius = self.radius
+        return ne.evaluate('exp(-(k*radius)**2/2)',
+         local_dict={'radius': radius, 'k': k})
 
 
 @attr.s(frozen=True)
