@@ -5,11 +5,65 @@ from scipy.integrate import dblquad
 from itertools import combinations_with_replacement
 import numexpr
 from scipy.interpolate import interp1d
-from tqdm import tqdm
 
 from .field import FieldHandler
 from .filters import Filter
 from .utils import integrand, build_index, rotate_covariance, rotate_xi
+
+
+def constrain(mean, cov, values):
+    '''Return the constrained mean and covariance given the values.
+    values is an array of same length as mean, with np.nan where you don't want
+    any constrain and the value elsewhere.
+
+    Parameters
+    ---------
+    mean : array_like, (N, )
+        The (unconstrained) mean
+    cov : array_like, (N, N)
+        The (unconstrained) covariance matrix
+    values : array_like (N, )
+        The values of the constrain. See the notes for the format of this array
+
+    Returns
+    -------
+    mean_c : array_like, (N-n, )
+         The constrained mean
+    cov_c : array_like, (N-n, N-n)
+         The constrained variance
+
+    Note
+    ----
+    The `values` array can be filled either with scalars, nan of
+    inf. The meaning of these is given in the table below.
+    Type   | Meaning
+    -------|------------------------
+    float  | Value at this location
+    nan    | No constrain
+    inf    | Drop this location
+    '''
+
+    # Keep `nan` elements, constrain finite ones
+    cons = np.isfinite(values)
+    keep = np.isnan(values)
+
+    # Keep only finite values (other values: no constrain)
+    vals = values[cons]
+
+    Sigma11 = cov[keep][:, keep]
+    Sigma12 = cov[keep][:, cons]
+    Sigma21 = cov[cons][:, keep]
+    Sigma22 = cov[cons][:, cons]
+    iSigma22 = np.linalg.inv(Sigma22)
+
+    mu1 = mean[keep]
+    mu2 = mean[cons]
+    mean_cons = mu1 + np.dot(np.dot(Sigma12, iSigma22),
+                             (vals - mu2))
+    cov_cons = Sigma11 - np.dot(np.dot(Sigma12, iSigma22), Sigma21)
+
+    return np.array(mean_cons).flatten(), np.array(cov_cons)
+
 
 def compute_covariance(c1, c2, frame):
     '''Compute the covariance between two constrains.
@@ -359,3 +413,4 @@ class ThirdDerivativeConstrain(Constrain):
                 dx, axis=(-3, -2, -1)),
             dx, axis=(-3, -2, -1)))
         return gradients[..., 3, 3, 3]
+
