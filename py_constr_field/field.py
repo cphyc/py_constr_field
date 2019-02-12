@@ -101,7 +101,7 @@ class FieldHandler(object):
         factor = std_target / std
 
         self.white_noise_fft = z * factor
-        self.white_noise = white_noise * factor
+        self.white_noise = fft.irfftn(self.white_noise_fft)
         return white_noise
 
     def normalize(self, filter, std_target):
@@ -115,7 +115,7 @@ class FieldHandler(object):
         std_measured = self.get_smoothed(filter).std()
         factor = std_target / std_measured
         self.white_noise_fft *= factor
-        self.white_noise *= factor
+        self.white_noise = fft.irfftn(self.white_noise_fft)
         
         self._smoothed = {}
 
