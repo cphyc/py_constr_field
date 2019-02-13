@@ -217,9 +217,12 @@ class FieldHandler(object):
         return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar,
                                 ctilde=ctilde)
         
-    def sigma(self, N):
+    def sigma(self, N, filter=None):
         k = self.Pk.x
         Pk = self.Pk.y
 
+        if filter is None:
+            filter = self.filter
+
         kpower = 2 + 2*N
-        return np.sqrt(np.trapz(k**kpower * Pk * self.filter.W(k)**2, k) / (2*np.pi**2))
+        return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k)**2, k) / (2*np.pi**2))
