@@ -5,8 +5,11 @@ import pyfftw.interfaces.numpy_fft as fft
 from scipy.interpolate import interp1d
 from collections import namedtuple
 from opt_einsum import contract_path, contract
+from colossus.cosmology import cosmology
 import numexpr as ne
 
+from . import filters
+cosmo = cosmology.setCosmology('planck18')
 
 def build_1dinterpolator(arg):
     '''Given a tuple of two arguments, return a 1d interpolation
@@ -35,8 +38,8 @@ class FieldHandler(object):
     Lbox = attr.ib(converter=float)
     dimensions = attr.ib(converter=int)
     Pk = attr.ib(converter=build_1dinterpolator)
-    filter = attr.ib()
-    sigma8 = attr.ib(converter=float)
+    filter = attr.ib(default=filters.TopHatFilter(radius=8))
+    sigma8 = attr.ib(converter=float, default=cosmo.sigma8)
     seed = attr.ib(converter=int, factory=lambda: np.random.randint(1<<32))
 
     constrains = attr.ib(factory=list)
