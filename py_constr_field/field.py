@@ -5,6 +5,7 @@ import pyfftw.interfaces.numpy_fft as fft
 from scipy.interpolate import interp1d
 from collections import namedtuple
 from opt_einsum import contract_path, contract
+import numexpr as ne
 
 
 def build_1dinterpolator(arg):
@@ -35,6 +36,8 @@ class FieldHandler(object):
     dimensions = attr.ib(converter=int)
     Pk = attr.ib(converter=build_1dinterpolator)
     filter = attr.ib()
+    sigma8 = attr.ib(converter=float)
+    seed = attr.ib(converter=int, factory=lambda: np.random.randint(1<<32))
 
     constrains = attr.ib(factory=list)
 
@@ -61,6 +64,7 @@ class FieldHandler(object):
 
         self._k2Pk = k**2 * Pk
         self._grid = np.mgrid[0:L:N, 0:L:N, 0:L:N]
+        np.random.seed(self.seed)
 
     @white_noise.default
     def generate_white_noise(self):
@@ -71,53 +75,37 @@ class FieldHandler(object):
         white_noise : np.ndarray
         '''
         # Compute the k grid
-        D = self.Lbox / self.dimensions / (2*np.pi)
-        all_k = ([fft.fftfreq(self.dimensions, d=D)
-                 for _ in range(self.Ndim-1)] +
-                 [fft.rfftfreq(self.dimensions, d=D)])
+        d = self.Lbox / self.dimensions / (2*np.pi)
+        all_k = ([fft.fftfreq(self.dimensions, d=d)] * (self.Ndim-1) +
+                 [fft.rfftfreq(self.dimensions, d=d)])
 
         self.kgrid = kgrid = np.array(np.meshgrid(*all_k, indexing='ij'))
-        self.knorm = knorm = np.sqrt(np.sum(kgrid**2, axis=0))
+        self.knorm = knorm = np.sqrt(ne.evaluate('sum(kgrid**2, axis=0)'))
 
         # Compute Pk
-        sigmas = np.zeros_like(knorm)
+        Pk = np.zeros_like(knorm)
         mask = knorm > 0
-        sigmas[mask] = np.sqrt(self.Pk(knorm[mask]))
+        Pk[mask] = self.Pk(knorm[mask])
 
         # Compute white noise (in Fourier space)
-        norm = np.random.rayleigh(sigmas)
-        phi = 2*np.pi*np.random.rand(*sigmas.shape)
+        norm = np.sqrt(Pk/2) / self.Lbox
+        deltak_real = np.random.normal(size=knorm.shape) * norm
+        deltak_imag = np.random.normal(size=knorm.shape) * norm
 
-        z = norm * np.exp(1j*phi)
+        deltak = deltak_real + 1j*deltak_imag
 
         # Compute field in real space
-        white_noise = fft.irfftn(z)
+        white_noise = fft.irfftn(deltak)
 
-        # Compute field variance
-        k2Pk = self.Pk.x**2 * self.Pk.y
-        std = white_noise.std()
-        std_target = np.sqrt(np.trapz(k2Pk / (2*np.pi**2), self.Pk.x))
+        # Normalize variance
+        deltak_smoothed = deltak * self.filter.W(knorm)
+        field = fft.irfftn(deltak_smoothed)
+        std = field.std()
 
-        factor = std_target / std
+        self.white_noise_fft = deltak * self.sigma8 / std
+        self.white_noise = white_noise * self.sigma8 / std
 
-        self.white_noise_fft = z * factor
-        self.white_noise = fft.irfftn(self.white_noise_fft)
-        return white_noise
-
-    def normalize(self, filter, std_target):
-        '''Normalize the white noise using the filter to a given value
-        
-        Params
-        ------
-        filter : Filter object
-        std_target : float
-            The variance of the smoothed field.'''
-        std_measured = self.get_smoothed(filter).std()
-        factor = std_target / std_measured
-        self.white_noise_fft *= factor
-        self.white_noise = fft.irfftn(self.white_noise_fft)
-        
-        self._smoothed = {}
+        return self.white_noise
 
     def get_smoothed(self, filter):
         if filter in self._smoothed:
@@ -145,7 +133,7 @@ class FieldHandler(object):
         '''Compute the covariance between the constrain points.'''
         if self._covariance is not None:
             return self._covariance
-            
+
         data = dict()
         for i1, c1 in enumerate(self.constrains):
             for i2, c2 in enumerate(self.constrains):
@@ -216,7 +204,7 @@ class FieldHandler(object):
 
         return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar,
                                 ctilde=ctilde)
-        
+
     def sigma(self, N, filter=None):
         k = self.Pk.x
         Pk = self.Pk.y

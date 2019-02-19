@@ -36,7 +36,7 @@ class GaussianFilter(Filter):
         W : float or ndarray'''
         radius = self.radius
         return ne.evaluate('exp(-(k*radius)**2/2)',
-         local_dict={'radius': radius, 'k': k})
+                           local_dict={'radius': radius, 'k': k})
 
 
 @attr.s(frozen=True)
