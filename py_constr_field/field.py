@@ -7,6 +7,7 @@ from collections import namedtuple
 from opt_einsum import contract_path, contract
 from colossus.cosmology import cosmology
 import numexpr as ne
+from numbers import Number
 
 from . import filters
 cosmo = cosmology.setCosmology('planck18')
@@ -111,6 +112,8 @@ class FieldHandler(object):
         return self.white_noise
 
     def get_smoothed(self, filter):
+        if isinstance(filter, Number):
+            filter = filters.GaussianFilter(radius=filter)
         if filter in self._smoothed:
             return self._smoothed[filter]
         knorm = self.knorm
@@ -214,6 +217,8 @@ class FieldHandler(object):
 
         if filter is None:
             filter = self.filter
+        elif isinstance(filter, Number):
+            filter = filters.GaussianFilter(radius=filter)
 
         kpower = 2 + 2*N
         return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k)**2, k) / (2*np.pi**2))
