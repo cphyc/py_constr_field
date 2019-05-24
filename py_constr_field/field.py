@@ -6,11 +6,11 @@ from scipy.interpolate import interp1d
 from collections import namedtuple
 from opt_einsum import contract_path, contract
 from colossus.cosmology import cosmology
-import numexpr as ne
 from numbers import Number
 
 from . import filters
 cosmo = cosmology.setCosmology('planck18')
+
 
 def build_1dinterpolator(arg):
     '''Given a tuple of two arguments, return a 1d interpolation
@@ -67,7 +67,7 @@ class FieldHandler(object):
         N = 1j * self.dimensions
 
         self._k2Pk = k**2 * Pk
-        self._grid = np.mgrid[0:L:N, 0:L:N, 0:L:N]
+        self._grid = np.meshgrid(*[np.arange(0, L, N)]*self.Ndim)
         np.random.seed(self.seed)
 
     @white_noise.default
