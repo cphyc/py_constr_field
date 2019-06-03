@@ -84,19 +84,17 @@ class FieldHandler(object):
                  [fft.rfftfreq(self.dimensions, d=d)])
 
         self.kgrid = kgrid = np.array(np.meshgrid(*all_k, indexing='ij'))
-        self.knorm = knorm = np.sqrt(ne.evaluate('sum(kgrid**2, axis=0)'))
+        self.knorm = knorm = np.sqrt(np.sum(kgrid**2, axis=0))
 
         # Compute Pk
         Pk = np.zeros_like(knorm)
         mask = knorm > 0
-        Pk[mask] = self.Pk(knorm[mask])
+        Pk[mask] = self.Pk(knorm[mask]*2)
 
         # Compute white noise (in Fourier space)
-        norm = np.sqrt(Pk/2) / self.Lbox
-        deltak_real = np.random.normal(size=knorm.shape) * norm
-        deltak_imag = np.random.normal(size=knorm.shape) * norm
-
-        deltak = deltak_real + 1j*deltak_imag
+        mu = np.random.standard_normal([self.dimensions]*self.Ndim)
+        muk = fft.rfftn(mu)
+        deltak = muk * np.sqrt(Pk)
 
         # Compute field in real space
         white_noise = fft.irfftn(deltak)
