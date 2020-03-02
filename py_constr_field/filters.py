@@ -1,5 +1,4 @@
 import attr
-import numpy as np
 import numexpr as ne
 
 from .utils import WTH
