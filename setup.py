@@ -47,7 +47,10 @@ setup(
     install_requires=[
                       'numpy',
                       'attrs',
-                      'opt_einsum'
+                      'opt_einsum',
+                      'pyfftw',
+                      'numba',
+                      'cython'
     ],
     extras_require={
         'dev': ['nose', 'nose-timer']

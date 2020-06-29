@@ -219,4 +219,11 @@ class FieldHandler(object):
             filter = filters.GaussianFilter(radius=filter)
 
         kpower = 2 + 2*N
-        return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k)**2, k) / (2*np.pi**2))
+        corr_factor = getattr(self, '_sigma_correction', None)
+        if corr_factor is None:
+            TH_filter = filters.TopHatFilter(8)
+            corr_factor = (
+                self.sigma8
+                / np.sqrt(np.trapz(k**2 * Pk * TH_filter.W(k)**2, k)))
+
+        return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k)**2, k)) * corr_factor
