@@ -48,6 +48,7 @@ setup(
                       'numpy',
                       'attrs',
                       'opt_einsum',
+                      'numexpr',
                       'pyfftw',
                       'numba',
                       'cython'

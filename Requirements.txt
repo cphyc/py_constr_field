@@ -2,3 +2,5 @@ colossus
 numpy
 pyfftw
 scipy
+opt_einsum
+numexpr
