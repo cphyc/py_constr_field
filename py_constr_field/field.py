@@ -7,6 +7,7 @@ from collections import namedtuple
 from opt_einsum import contract_path, contract
 from colossus.cosmology import cosmology
 from numbers import Number
+import numexpr as ne
 
 from . import filters
 cosmo = cosmology.setCosmology('planck18')
@@ -56,7 +57,6 @@ class FieldHandler(object):
     covariance_cache = attr.ib(factory=dict)
     use_covariance_cache = attr.ib(default=True)
 
-    _k2Pk = None
 
     def __attrs_post_init__(self):
         '''Precompute some data.'''
@@ -66,8 +66,8 @@ class FieldHandler(object):
         L = self.Lbox
         N = 1j * self.dimensions
 
-        self._k2Pk = k**2 * Pk
         self._grid = np.meshgrid(*[np.arange(0, L, N)]*self.Ndim)
+
         np.random.seed(self.seed)
 
     @white_noise.default
