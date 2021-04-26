@@ -1,6 +1,7 @@
-import numpy as np
-from numba import njit, guvectorize
 from itertools import combinations_with_replacement, permutations
+
+import numpy as np
+from numba import guvectorize, njit
 from opt_einsum import contract as einsum
 
 
@@ -9,16 +10,15 @@ def trapz(A, x):
     return np.sum((A[1:] + A[:-1]) / 2 * np.diff(x))
 
 
-@guvectorize(['void(float64[:],float64[:])'],
-             '(N)->(N)')
+@guvectorize(["void(float64[:],float64[:])"], "(N)->(N)")
 def WTH(X, out):
     for i in range(X.shape[0]):
         x = X[i]
-        x2 = X[i]**2
+        x2 = X[i] ** 2
         if x < 1e-4:
-            out[i] = 1 - x2/10
+            out[i] = 1 - x2 / 10
         else:
-            out[i] = 3 * (np.sin(x)/x2/x - np.cos(x)/x2)
+            out[i] = 3 * (np.sin(x) / x2 / x - np.cos(x) / x2)
 
 
 @njit
@@ -33,27 +33,25 @@ def integrand(phi, theta, ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2):
     ky = k * sin_theta * np.sin(phi)
     kz = k * cos_theta
 
-    exppart = np.cos(kx * d - ii*np.pi/2)
+    exppart = np.cos(kx * d - ii * np.pi / 2)
 
-    intgd = (
-        k2Pk_W1_W2 * sin_theta * exppart
-    )
+    intgd = k2Pk_W1_W2 * sin_theta * exppart
 
     if ikx != 0:
-        intgd *= kx**ikx
+        intgd *= kx ** ikx
     if iky != 0:
-        intgd *= ky**iky
+        intgd *= ky ** iky
     if ikz != 0:
-        intgd *= kz**ikz
+        intgd *= kz ** ikz
     if ikk != 0:
-        intgd /= k**ikk
+        intgd /= k ** ikk
 
     return trapz(intgd, k)
 
 
 def build_index(Nfreedom):
     ii = 0
-    index = np.zeros([3]*Nfreedom, dtype=int)
+    index = np.zeros([3] * Nfreedom, dtype=int)
     combin = combinations_with_replacement(range(3), Nfreedom)
     for icount, ii in enumerate(combin):
         for jj in permutations(ii):
@@ -62,7 +60,7 @@ def build_index(Nfreedom):
 
 
 def rotate_covariance(c1, c2, cov):
-    '''Rotate a covariance matrix from the separation frame to the cartesian frame
+    """Rotate a covariance matrix from the separation frame to the cartesian frame
 
     Parameter
     ---------
@@ -75,7 +73,7 @@ def rotate_covariance(c1, c2, cov):
     cov : ndarray (N, M)
         The covariance matrix in the cartesian frame.
 
-    '''
+    """
     X1 = c1._cfd.position.astype(np.float64)
     X2 = c2._cfd.position.astype(np.float64)
     Nf1 = c1._cfd.N[:, :-1].sum(axis=1)[0]
@@ -87,7 +85,7 @@ def rotate_covariance(c1, c2, cov):
 
     r = X2 - X1
     e1 = r
-    e2 = np.array([-e1[1]-e1[2], e1[0]-e1[2], e1[0]+e1[1]])
+    e2 = np.array([-e1[1] - e1[2], e1[0] - e1[2], e1[0] + e1[1]])
     e3 = np.cross(e1, e2)
 
     e1 /= np.linalg.norm(e1)
@@ -117,10 +115,10 @@ def rotate_covariance(c1, c2, cov):
     # Build the rotation using the einstein notation
     args = [extended_cov, list(range(Ndim))]
     for _ in range(Nf1):
-        args.extend([R1, [ii, ii+Ndim]])
+        args.extend([R1, [ii, ii + Ndim]])
         ii += 1
     for _ in range(Nf2):
-        args.extend([R2, [ii, ii+Ndim]])
+        args.extend([R2, [ii, ii + Ndim]])
         ii += 1
 
     extended_cov = einsum(*args)
@@ -144,9 +142,10 @@ def rotate_covariance(c1, c2, cov):
 
     return np.asarray(new_cov)
 
+
 def rotate_xi(c, positions, xi0):
-    '''Rotate the xi function from separation to cartesian frame.
-    
+    """Rotate the xi function from separation to cartesian frame.
+
     Parameters
     ----------
     c : Constrain
@@ -155,14 +154,14 @@ def rotate_xi(c, positions, xi0):
         The positions at which the xi function is evaluated.
     xi0 : ndarray (Npt, 1, N1, ..., Nn)
         The value of the correlation function between the field and the constrain.
-        
+
     Returns
     -------
     xi : ndarray, (Npt, 1, N1, ..., Nn)
         The value of correlation function in the cartesian frame.
-    '''
+    """
     shape = positions.shape[:-1]
-    
+
     Nf1 = 0
     Nf2 = c._cfd.N[:, :-1].sum(axis=1)[0]
     X1 = c._cfd.position
@@ -170,7 +169,9 @@ def rotate_xi(c, positions, xi0):
     d = np.linalg.norm(X2 - X1, axis=-1)
     e1 = X2 - X1
     e1[d == 0, :] = [1, 0, 0]  # Special care at zero-separation
-    e2 = np.array([-e1[..., 1]-e1[..., 2], e1[..., 0]-e1[..., 2], e1[..., 0]+e1[..., 1]]).T
+    e2 = np.array(
+        [-e1[..., 1] - e1[..., 2], e1[..., 0] - e1[..., 2], e1[..., 0] + e1[..., 1]]
+    ).T
     e3 = np.cross(e1, e2)
 
     e1 /= np.linalg.norm(e1, axis=-1)[..., None]
@@ -206,10 +207,10 @@ def rotate_xi(c, positions, xi0):
     # Build the rotation using the einstein notation
     args = [extended_xi, [...] + list(range(Ndim))]
     for _ in range(Nf1):
-        args.extend([R1, [..., ii, ii+Ndim]])
+        args.extend([R1, [..., ii, ii + Ndim]])
         ii += 1
     for _ in range(Nf2):
-        args.extend([R2, [..., ii, ii+Ndim]])
+        args.extend([R2, [..., ii, ii + Ndim]])
         ii += 1
 
     extended_xi = einsum(*args)
