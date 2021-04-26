@@ -1,18 +1,19 @@
-'''Classes to represent linear constrains.'''
+"""Classes to represent linear constrains."""
+from itertools import combinations_with_replacement
+
 import attr
+import numexpr
 import numpy as np
 from scipy.integrate import dblquad
-from itertools import combinations_with_replacement
-import numexpr
 from scipy.interpolate import interp1d
 
 from .field import FieldHandler
 from .filters import Filter
-from .utils import integrand, build_index, rotate_covariance, rotate_xi
+from .utils import build_index, integrand, rotate_covariance, rotate_xi
 
 
 def constrain(mean, cov, values):
-    '''Return the constrained mean and covariance given the values.
+    """Return the constrained mean and covariance given the values.
     values is an array of same length as mean, with np.nan where you don't want
     any constrain and the value elsewhere.
 
@@ -41,7 +42,7 @@ def constrain(mean, cov, values):
     float  | Value at this location
     nan    | No constrain
     inf    | Drop this location
-    '''
+    """
 
     # Keep `nan` elements, constrain finite ones
     cons = np.isfinite(values)
@@ -58,15 +59,14 @@ def constrain(mean, cov, values):
 
     mu1 = mean[keep]
     mu2 = mean[cons]
-    mean_cons = mu1 + np.dot(np.dot(Sigma12, iSigma22),
-                             (vals - mu2))
+    mean_cons = mu1 + np.dot(np.dot(Sigma12, iSigma22), (vals - mu2))
     cov_cons = Sigma11 - np.dot(np.dot(Sigma12, iSigma22), Sigma21)
 
     return np.array(mean_cons).flatten(), np.array(cov_cons)
 
 
 def compute_covariance(c1, c2, frame):
-    '''Compute the covariance between two constrains.
+    """Compute the covariance between two constrains.
 
     Arguments
     ---------
@@ -85,7 +85,7 @@ def compute_covariance(c1, c2, frame):
     frame set by the constrains. If the frame is "separation", it is
     expressed in the separation frame where the third dimension is the
     separation one.
-    '''
+    """
     X1 = c1._cfd.position
     X2 = c2._cfd.position
     r = X2 - X1
@@ -100,11 +100,11 @@ def compute_covariance(c1, c2, frame):
 
     k = Pk_gen.x
     Pk = Pk_gen.y
-    k2Pk = k**2 * Pk
+    k2Pk = k ** 2 * Pk
 
     k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
 
-    eightpi3 = 8*np.pi**3
+    eightpi3 = 8 * np.pi ** 3
 
     N1 = c1._cfd.N
     N2 = c2._cfd.N
@@ -117,11 +117,13 @@ def compute_covariance(c1, c2, frame):
             lkz = ikz + jkz
             lkk = ikk + jkk
 
-            sign = (-1)**(jkx+jky+jkz)
+            sign = (-1) ** (jkx + jky + jkz)
 
-            key = tuple([lkx] +
-                        list(sorted((lky, lkz))) +
-                        [lkk, d, c1._filter, c2._filter, sign])
+            key = tuple(
+                [lkx]
+                + list(sorted((lky, lkz)))
+                + [lkk, d, c1._filter, c2._filter, sign]
+            )
 
             # Key already computed, use data from cache
             if use_cache and key in cache:
@@ -130,10 +132,15 @@ def compute_covariance(c1, c2, frame):
                 val = 0
             else:
                 integral, _ = dblquad(
-                    integrand, 0, np.pi,
-                    lambda theta: 0, lambda theta: 2*np.pi,
-                    epsrel=1e-5, epsabs=1e-5,
-                    args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2))
+                    integrand,
+                    0,
+                    np.pi,
+                    lambda theta: 0,
+                    lambda theta: 2 * np.pi,
+                    epsrel=1e-5,
+                    epsabs=1e-5,
+                    args=(lkx, lky, lkz, lkk, d, k, k2Pk_W1_W2),
+                )
 
                 val = sign * integral / eightpi3
 
@@ -142,21 +149,21 @@ def compute_covariance(c1, c2, frame):
             if use_cache:
                 cache[key] = val
 
-    if frame == 'original':
+    if frame == "original":
         return rotate_covariance(c1, c2, cov)
-    elif frame == 'separation':
+    elif frame == "separation":
         return cov
 
 
 @attr.s(frozen=True)
-class ConstrainFixedData(object):
+class ConstrainFixedData:
     position = attr.ib(converter=lambda e: np.array(e, dtype=np.float64))
     filter = attr.ib(validator=[attr.validators.instance_of(Filter)])
     field_handler = attr.ib(type=FieldHandler)
     N = attr.ib(converter=np.atleast_2d)
 
 
-class Constrain(object):
+class Constrain:
     value = None
     N = None
     frame = np.diag([1, 1, 1])
@@ -165,8 +172,7 @@ class Constrain(object):
 
     def __init__(self, position, filter, field_handler, value):
         N = np.atleast_2d(self.N)
-        self._cfd = ConstrainFixedData(position, filter, field_handler,
-                                       N=N)
+        self._cfd = ConstrainFixedData(position, filter, field_handler, N=N)
         self.value = value
         self._filter = filter
         self._fh = field_handler
@@ -174,7 +180,7 @@ class Constrain(object):
         self.N = np.atleast_2d(self.N)
 
     def _compute_ipos(self):
-        '''Find the position of the constrain on the grid.'''
+        """Find the position of the constrain on the grid."""
         pos = self._cfd.position
         fh = self._fh
 
@@ -182,16 +188,17 @@ class Constrain(object):
 
         grid = self._fh.get_grid()
 
-        new_shape = [-1] + [1] * (grid.ndim-1)
+        new_shape = [-1] + [1] * (grid.ndim - 1)
         pos = self._cfd.position.reshape(*new_shape)
         grid = self._fh.get_grid()
-        d = numexpr.evaluate('sum((grid-pos)**2, axis=0)',
-         local_dict=dict(pos=pos, grid=grid))
+        d = numexpr.evaluate(
+            "sum((grid-pos)**2, axis=0)", local_dict=dict(pos=pos, grid=grid)
+        )
         ipos = np.unravel_index(np.argmin(d), grid.shape[1:])
         return ipos
 
     def _precompute_xi(self, rtol=1e-2):
-        '''Precompute the value of the correlation function on a fixed grid'''
+        """Precompute the value of the correlation function on a fixed grid"""
         Rmin = min(self._filter.radius, self._fh.filter.radius)
 
         window1 = self._filter.W
@@ -201,11 +208,11 @@ class Constrain(object):
 
         k = Pk_gen.x
         Pk = Pk_gen.y
-        k2Pk = k**2 * Pk
+        k2Pk = k ** 2 * Pk
 
         k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
 
-        eightpi3 = 8*np.pi**3
+        eightpi3 = 8 * np.pi ** 3
 
         N1 = self._cfd.N
         self._xi = {}
@@ -215,10 +222,15 @@ class Constrain(object):
         @np.vectorize
         def compute_xi(d, ikx, iky, ikz, ikk):
             integral, _ = dblquad(
-                integrand, 0, np.pi,
-                lambda theta: 0, lambda theta: 2*np.pi,
-                epsrel=1e-5, epsabs=1e-5,
-                args=(ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2))
+                integrand,
+                0,
+                np.pi,
+                lambda theta: 0,
+                lambda theta: 2 * np.pi,
+                epsrel=1e-5,
+                epsabs=1e-5,
+                args=(ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2),
+            )
 
             val = integral / eightpi3
             return val
@@ -226,20 +238,22 @@ class Constrain(object):
         for i, (ikx, iky, ikz, ikk) in enumerate(N1):
             # Early exit if power of k in y/z direction is odd
             if iky % 2 == 1 or ikz % 2 == 1:
-                print(f'{self}: precomputing->{ikx},{iky},{ikz} — component is null')
+                print(f"{self}: precomputing->{ikx},{iky},{ikz} — component is null")
                 self._xi[i] = interp1d([0, 1e5], [0, 0])
                 continue
             # Lookup in cache if similar entry exists
             key = tuple([ikx] + sorted((iky, ikk)) + [ikk])
             if key in cache:
-                print(f'{self}: precomputing->{ikx},{iky},{ikz} — found item in cache with key {key}')
+                print(
+                    f"{self}: precomputing->{ikx},{iky},{ikz} — found item in cache with key {key}"
+                )
                 self._xi[i] = cache[key]
                 continue
 
-            print(f'{self}: precomputing->{ikx},{iky},{ikz}')
+            print(f"{self}: precomputing->{ikx},{iky},{ikz}")
 
             N = ikx + iky + ikz - ikk
-            sigma2 = self._fh.sigma(N/2)**2
+            sigma2 = self._fh.sigma(N / 2) ** 2
 
             distances = [0, self._fh.Lbox * np.sqrt(3) / 2]
             y = list(compute_xi(distances, ikx, iky, ikz, ikk))
@@ -248,9 +262,11 @@ class Constrain(object):
             norm = sigma2
             diff = np.abs(y[-1] / norm)
             while diff > rtol:
-                new_dmax = distances[-1]*1.5
-                print(f'\tIncreasing dmax={new_dmax:.3f} (diff={diff:.3f}, '
-                      f'ylast={y[-1]:.3f}, sigma²={sigma2:.3f})')
+                new_dmax = distances[-1] * 1.5
+                print(
+                    f"\tIncreasing dmax={new_dmax:.3f} (diff={diff:.3f}, "
+                    f"ylast={y[-1]:.3f}, sigma²={sigma2:.3f})"
+                )
                 distances.append(new_dmax)
                 y.append(compute_xi(new_dmax, ikx, iky, ikz, ikk))
                 norm = min(np.abs(np.ptp(y)), sigma2)
@@ -283,29 +299,34 @@ class Constrain(object):
                 norm = min(np.abs(y.ptp()), sigma2)
                 dy_o_sigma = np.abs(np.diff(y) / norm)
                 mask = (dx > Rmin / 2) | (dy_o_sigma > rtol)
-                print(f'\tComputing {mask.sum()}/{mask.shape[0]} new point '
-                      f'(norm={norm:.3f}, sigma²={sigma2:.3f})')
+                print(
+                    f"\tComputing {mask.sum()}/{mask.shape[0]} new point "
+                    f"(norm={norm:.3f}, sigma²={sigma2:.3f})"
+                )
 
-            self._xi[i] = interp1d(distances, y, kind='quadratic', bounds_error=False, fill_value=0)
+            self._xi[i] = interp1d(
+                distances, y, kind="quadratic", bounds_error=False, fill_value=0
+            )
             cache[key] = self._xi[i]
 
     def __repr__(self):
-        return '<Constrain: %s, filter=%s X=%s>' % (self.__class__.__name__, self._filter, self._cfd.position)
+        return f"<Constrain: {self.__class__.__name__}, filter={self._filter} X={self._cfd.position}>"
 
     def compute_covariance(self, other, frame):
-        '''Compute the covariance matrice between two functional constrains.'''
+        """Compute the covariance matrice between two functional constrains."""
         return compute_covariance(self, other, frame)
 
     @property
     def xi(self):
-        '''Compute the correlation function between the current functional
-        and the density field at given positions.'''
+        """Compute the correlation function between the current functional
+        and the density field at given positions."""
         if self._xi is None:
             self._precompute_xi()
 
         X0 = self._cfd.position
+
         def loc(positions):
-            tmp = np.atleast_2d((positions))
+            tmp = np.atleast_2d(positions)
             assert tmp.shape[-1] == 3
             positions = tmp.reshape(-1, 3)
 
@@ -317,8 +338,8 @@ class Constrain(object):
         return loc
 
     def measure_compact(self):
-        '''Measure the value of the field for the given constrain and return
-        its independant component.'''
+        """Measure the value of the field for the given constrain and return
+        its independant component."""
         val = self.measure()
         Nfreedom = self.N[0, :-1].sum()
         out = []
@@ -327,7 +348,7 @@ class Constrain(object):
         return np.array(out)
 
     def measure(self):
-        '''Measure the value of the field for the given constrain.'''
+        """Measure the value of the field for the given constrain."""
         raise NotImplementedError()
 
 
@@ -343,9 +364,7 @@ class DensityConstrain(Constrain):
 
 
 class GradientConstrain(Constrain):
-    N = [[1, 0, 0, 0],
-         [0, 1, 0, 0],
-         [0, 0, 1, 0]]
+    N = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
 
     def measure(self):
         field = self._fh.get_smoothed(self._filter)
@@ -354,20 +373,23 @@ class GradientConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = tuple(np.meshgrid(*(np.arange(i-1, i+2) %
-                                      N for i in ipos), indexing='ij'))
+        indices = tuple(
+            np.meshgrid(*(np.arange(i - 1, i + 2) % N for i in ipos), indexing="ij")
+        )
         tmp = field[indices]
         dx = self._fh.Lbox / self._fh.dimensions
         return np.array(np.gradient(tmp, dx))[..., 1, 1, 1]
 
 
 class HessianConstrain(Constrain):
-    N = [[2, 0, 0, 0],
-         [1, 1, 0, 0],
-         [1, 0, 1, 0],
-         [0, 2, 0, 0],
-         [0, 1, 1, 0],
-         [0, 0, 2, 0]]
+    N = [
+        [2, 0, 0, 0],
+        [1, 1, 0, 0],
+        [1, 0, 1, 0],
+        [0, 2, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 2, 0],
+    ]
 
     def measure(self):
         field = self._fh.get_smoothed(self._filter)
@@ -376,26 +398,30 @@ class HessianConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = tuple(np.meshgrid(*(np.arange(i-2, i+3) %
-                                      N for i in ipos), indexing='ij'))
+        indices = tuple(
+            np.meshgrid(*(np.arange(i - 2, i + 3) % N for i in ipos), indexing="ij")
+        )
         tmp = field[indices]
         dx = self._fh.Lbox / self._fh.dimensions
-        gradients = np.array(np.gradient(np.gradient(
-            tmp, dx, axis=(-3, -2, -1)), dx, axis=(-3, -2, -1)))
+        gradients = np.array(
+            np.gradient(np.gradient(tmp, dx, axis=(-3, -2, -1)), dx, axis=(-3, -2, -1))
+        )
         return gradients[..., 2, 2, 2]
 
 
 class ThirdDerivativeConstrain(Constrain):
-    N = [[3, 0, 0, 0],
-         [2, 1, 0, 0],
-         [2, 0, 1, 0],
-         [1, 2, 0, 0],
-         [1, 1, 1, 0],
-         [1, 0, 2, 0],
-         [0, 3, 0, 0],
-         [0, 2, 1, 0],
-         [0, 1, 2, 0],
-         [0, 0, 3, 0]]
+    N = [
+        [3, 0, 0, 0],
+        [2, 1, 0, 0],
+        [2, 0, 1, 0],
+        [1, 2, 0, 0],
+        [1, 1, 1, 0],
+        [1, 0, 2, 0],
+        [0, 3, 0, 0],
+        [0, 2, 1, 0],
+        [0, 1, 2, 0],
+        [0, 0, 3, 0],
+    ]
 
     def measure(self):
         field = self._fh.get_smoothed(self._filter)
@@ -404,13 +430,18 @@ class ThirdDerivativeConstrain(Constrain):
 
         N = grid.shape[-1]
 
-        indices = tuple(np.meshgrid(*(np.arange(i-3, i+4) %
-                                      N for i in ipos), indexing='ij'))
+        indices = tuple(
+            np.meshgrid(*(np.arange(i - 3, i + 4) % N for i in ipos), indexing="ij")
+        )
         tmp = field[indices]
         dx = self._fh.Lbox / self._fh.dimensions
-        gradients = np.array(np.gradient(np.gradient(np.gradient(
-                    tmp, dx, axis=(-3, -2, -1)),
-                dx, axis=(-3, -2, -1)),
-            dx, axis=(-3, -2, -1)))
+        gradients = np.array(
+            np.gradient(
+                np.gradient(
+                    np.gradient(tmp, dx, axis=(-3, -2, -1)), dx, axis=(-3, -2, -1)
+                ),
+                dx,
+                axis=(-3, -2, -1),
+            )
+        )
         return gradients[..., 3, 3, 3]
-

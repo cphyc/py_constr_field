@@ -1,20 +1,22 @@
-'''Classes to represent a Gaussian Random field.'''
-import numpy as np
-import attr
-import pyfftw.interfaces.numpy_fft as fft
-from scipy.interpolate import interp1d
+"""Classes to represent a Gaussian Random field."""
 from collections import namedtuple
-from opt_einsum import contract_path, contract
-from colossus.cosmology import cosmology
 from numbers import Number
+
+import attr
 import numexpr as ne
+import numpy as np
+import pyfftw.interfaces.numpy_fft as fft
+from colossus.cosmology import cosmology
+from opt_einsum import contract, contract_path
+from scipy.interpolate import interp1d
 
 from . import filters
-cosmo = cosmology.setCosmology('planck18')
+
+cosmo = cosmology.setCosmology("planck18")
 
 
 def build_1dinterpolator(arg):
-    '''Given a tuple of two arguments, return a 1d interpolation
+    """Given a tuple of two arguments, return a 1d interpolation
     function. If the argument is already callable, just pass it.
 
     Arguments
@@ -26,23 +28,23 @@ def build_1dinterpolator(arg):
     -------
     interpolation : callable
        An interpolation function.
-       '''
+    """
     if callable(arg):
         return arg
     else:
         k, Pk = arg
-        return interp1d(k, Pk, kind='quadratic')
+        return interp1d(k, Pk, kind="quadratic")
 
 
 @attr.s
-class FieldHandler(object):
+class FieldHandler:
     Ndim = attr.ib(converter=int)
     Lbox = attr.ib(converter=float)
     dimensions = attr.ib(converter=int)
     Pk = attr.ib(converter=build_1dinterpolator)
     filter = attr.ib(default=filters.TopHatFilter(radius=8))
     sigma8 = attr.ib(converter=float, default=cosmo.sigma8)
-    seed = attr.ib(converter=int, factory=lambda: np.random.randint(1<<32))
+    seed = attr.ib(converter=int, factory=lambda: np.random.randint(1 << 32))
 
     constrains = attr.ib(factory=list)
 
@@ -57,42 +59,42 @@ class FieldHandler(object):
     covariance_cache = attr.ib(factory=dict)
     use_covariance_cache = attr.ib(default=True)
 
-
     def __attrs_post_init__(self):
-        '''Precompute some data.'''
+        """Precompute some data."""
 
         k = self.Pk.x
         Pk = self.Pk(k)
         L = self.Lbox
         N = 1j * self.dimensions
 
-        self._grid = np.meshgrid(*[np.arange(0, L, N)]*self.Ndim)
+        self._grid = np.meshgrid(*[np.arange(0, L, N)] * self.Ndim)
 
         np.random.seed(self.seed)
 
     @white_noise.default
     def generate_white_noise(self):
-        '''Generate a white noise with the relevant power spectrum.
+        """Generate a white noise with the relevant power spectrum.
 
         Returns
         -------
         white_noise : np.ndarray
-        '''
+        """
         # Compute the k grid
-        d = self.Lbox / self.dimensions / (2*np.pi)
-        all_k = ([fft.fftfreq(self.dimensions, d=d)] * (self.Ndim-1) +
-                 [fft.rfftfreq(self.dimensions, d=d)])
+        d = self.Lbox / self.dimensions / (2 * np.pi)
+        all_k = [fft.fftfreq(self.dimensions, d=d)] * (self.Ndim - 1) + [
+            fft.rfftfreq(self.dimensions, d=d)
+        ]
 
-        self.kgrid = kgrid = np.array(np.meshgrid(*all_k, indexing='ij'))
-        self.knorm = knorm = np.sqrt(np.sum(kgrid**2, axis=0))
+        self.kgrid = kgrid = np.array(np.meshgrid(*all_k, indexing="ij"))
+        self.knorm = knorm = np.sqrt(np.sum(kgrid ** 2, axis=0))
 
         # Compute Pk
         Pk = np.zeros_like(knorm)
         mask = knorm > 0
-        Pk[mask] = self.Pk(knorm[mask]*2)
+        Pk[mask] = self.Pk(knorm[mask] * 2)
 
         # Compute white noise (in Fourier space)
-        mu = np.random.standard_normal([self.dimensions]*self.Ndim)
+        mu = np.random.standard_normal([self.dimensions] * self.Ndim)
         muk = fft.rfftn(mu)
         deltak = muk * np.sqrt(Pk)
 
@@ -124,17 +126,17 @@ class FieldHandler(object):
         return self._grid
 
     def add_constrain(self, constrain):
-        '''Add a constrain to the GRF.
+        """Add a constrain to the GRF.
 
         Parameters
         ----------
         constrain : Constrain object
-           The object describing the constrain.'''
+           The object describing the constrain."""
         self._covariance = None
         self.constrains.append(constrain)
 
-    def compute_covariance(self, frame='original'):
-        '''Compute the covariance between the constrain points.'''
+    def compute_covariance(self, frame="original"):
+        """Compute the covariance between the constrain points."""
         if self._covariance is not None:
             return self._covariance
 
@@ -148,11 +150,13 @@ class FieldHandler(object):
                 data[i2, i1] = tmp
 
         Nc = len(self.constrains)
-        self._covariance = np.block([[data[i1, i2] for i1 in range(Nc)] for i2 in range(Nc)])
+        self._covariance = np.block(
+            [[data[i1, i2] for i1 in range(Nc)] for i2 in range(Nc)]
+        )
         return self._covariance
 
     def compute_xi(self):
-        '''Compute the correlation function between the constrain and the field'''
+        """Compute the correlation function between the constrain and the field"""
         if self._xi is not None:
             return self._xi
         xi = []
@@ -188,13 +192,17 @@ class FieldHandler(object):
         c0 = c0[mask]
         ctilde = ctilde[mask]
 
-        print(f'Applying {mask.sum()} constrains')
+        print(f"Applying {mask.sum()} constrains")
 
         # Compute constrained field
         ftilde = self.get_smoothed(self.filter).flatten()
 
-        path, _ = contract_path('ai,ij,bj->ba', xi, xij_inv, [ctilde, ctilde], optimize='optimal')
-        ftilde_bar, f_bar = contract('ai,ij,bj->ba', xi, xij_inv, [ctilde, c0], optimize=path)
+        path, _ = contract_path(
+            "ai,ij,bj->ba", xi, xij_inv, [ctilde, ctilde], optimize="optimal"
+        )
+        ftilde_bar, f_bar = contract(
+            "ai,ij,bj->ba", xi, xij_inv, [ctilde, c0], optimize=path
+        )
 
         f = ftilde + f_bar - ftilde_bar
 
@@ -204,10 +212,13 @@ class FieldHandler(object):
         ftilde_bar = ftilde_bar.reshape(shape)
         f_bar = f_bar.reshape(shape)
 
-        ConstrainedField = namedtuple('ConstrainedField', ['f', 'ftilde', 'f_bar', 'ftilde_bar', 'ctilde'])
+        ConstrainedField = namedtuple(
+            "ConstrainedField", ["f", "ftilde", "f_bar", "ftilde_bar", "ctilde"]
+        )
 
-        return ConstrainedField(f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar,
-                                ctilde=ctilde)
+        return ConstrainedField(
+            f=f, ftilde=ftilde, f_bar=f_bar, ftilde_bar=ftilde_bar, ctilde=ctilde
+        )
 
     def sigma(self, N, filter=None):
         k = self.Pk.x
@@ -218,12 +229,12 @@ class FieldHandler(object):
         elif isinstance(filter, Number):
             filter = filters.GaussianFilter(radius=filter)
 
-        kpower = 2 + 2*N
-        corr_factor = getattr(self, '_sigma_correction', None)
+        kpower = 2 + 2 * N
+        corr_factor = getattr(self, "_sigma_correction", None)
         if corr_factor is None:
             TH_filter = filters.TopHatFilter(8)
-            corr_factor = (
-                self.sigma8
-                / np.sqrt(np.trapz(k**2 * Pk * TH_filter.W(k)**2, k)))
+            corr_factor = self.sigma8 / np.sqrt(
+                np.trapz(k ** 2 * Pk * TH_filter.W(k) ** 2, k)
+            )
 
-        return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k)**2, k)) * corr_factor
+        return np.sqrt(np.trapz(k ** kpower * Pk * filter.W(k) ** 2, k)) * corr_factor
