@@ -62,9 +62,11 @@ class FieldHandler:
         """Precompute some data."""
 
         L = self.Lbox
-        N = 1j * self.dimensions
+        N = self.dimensions
 
-        self._grid = np.meshgrid(*[np.arange(0, L, N)] * self.Ndim)
+        self._grid = np.array(
+            np.meshgrid(*[np.arange(0, L, N)] * self.Ndim, indexing="ij")
+        )
 
         np.random.seed(self.seed)
 
@@ -164,7 +166,6 @@ class FieldHandler:
         return self._xi
 
     def get_constrained(self, filter, std_target):
-        self.normalize(filter, std_target)
         xi = self.compute_xi()
         xij = self.compute_covariance()
         xij_inv = np.linalg.inv(xij)
