@@ -166,7 +166,6 @@ class FieldHandler:
         return self._xi
 
     def get_constrained(self, filter, std_target):
-        self.normalize(filter, std_target)
         xi = self.compute_xi()
         xij = self.compute_covariance()
         xij_inv = np.linalg.inv(xij)
