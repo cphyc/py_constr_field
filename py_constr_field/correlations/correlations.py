@@ -5,8 +5,6 @@ from functools import partial, wraps
 from itertools import combinations_with_replacement
 from multiprocessing import Pool, cpu_count
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy import cos, pi, sin, sqrt
 from scipy.integrate import dblquad
@@ -14,7 +12,7 @@ from scipy.interpolate import interp1d
 from tqdm.autonotebook import tqdm
 
 from py_constr_field.correlations.funcs import LRUCache
-from py_constr_field.utils import Utils
+from py_constr_field.correlations.utils import Utils
 
 this_dir, this_filename = os.path.split(__file__)
 
@@ -939,6 +937,8 @@ class Correlator:
         Covariance plot helper.
         """
 
+        import matplotlib.pyplot as plt
+
         if symlog:
             tmp = np.abs(self.cov_c)
             # Get minimal non null value
@@ -947,7 +947,7 @@ class Correlator:
             # Round it to closer power of 10
             vmin = 10 ** (np.floor(np.log10(vmin)))
 
-            kwa.update({"norm": mpl.colors.SymLogNorm(vmin)})
+            kwa.update({"norm": plt.matplotlib.colors.SymLogNorm(vmin)})
 
         plt.imshow(cov, cmap="seismic", vmin=-1, vmax=1, *args, **kwa)
         N, _ = cov.shape

@@ -4,16 +4,9 @@ from colossus.cosmology import cosmology
 from numpy.testing import assert_allclose, assert_array_less
 
 from py_constr_field import constrain as C, filters
+from py_constr_field.correlations.correlations import Correlator
+from py_constr_field.correlations.utils import Utils
 from py_constr_field.field import FieldHandler
-
-try:
-    from correlations.correlations import Correlator
-    from correlations.utils import Utils
-
-    HAS_CORRELATIONS = True
-except ImportError:
-    HAS_CORRELATIONS = False
-
 
 cosmo = cosmology.setCosmology("planck18")
 k = np.geomspace(1e-4, 1e4, 2000)
@@ -89,9 +82,6 @@ def test_constrain_correlation_nolag():
     assert_allclose(cov, cov.T)
 
 
-@pytest.mark.skipif(
-    not HAS_CORRELATIONS, reason="Did not install the 'correlations' package"
-)
 def test_full_correlation():
     f1 = filters.GaussianFilter(radius=5)
     f2 = filters.GaussianFilter(radius=6)
@@ -185,9 +175,6 @@ def test_measures():
     assert_allclose(val, tgt)
 
 
-@pytest.mark.skipif(
-    not HAS_CORRELATIONS, reason="Did not install the 'correlations' package"
-)
 def test_xi():
     positions = np.random.rand(10, 3) * 20
 
