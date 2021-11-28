@@ -3,7 +3,6 @@ from collections import namedtuple
 from numbers import Number
 
 import attr
-import numexpr as ne
 import numpy as np
 import pyfftw.interfaces.numpy_fft as fft
 from colossus.cosmology import cosmology
@@ -62,8 +61,6 @@ class FieldHandler:
     def __attrs_post_init__(self):
         """Precompute some data."""
 
-        k = self.Pk.x
-        Pk = self.Pk(k)
         L = self.Lbox
         N = 1j * self.dimensions
 

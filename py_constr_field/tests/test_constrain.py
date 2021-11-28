@@ -130,7 +130,8 @@ def test_full_correlation():
 
         new = fh.compute_covariance() / S
 
-        # Check closeness (note: the order may be different so only check det and eigenvalues)
+        # Check closeness (note: the order may be different so only
+        # check det and eigenvalues)
         det_ref = np.linalg.det(ref)
         det_new = np.linalg.det(new)
 

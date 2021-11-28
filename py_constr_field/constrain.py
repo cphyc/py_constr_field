@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d
 
 from .field import FieldHandler
 from .filters import Filter
-from .utils import build_index, integrand, rotate_covariance, rotate_xi
+from .utils import integrand, rotate_covariance, rotate_xi
 
 
 def constrain(mean, cov, values):
@@ -245,7 +245,8 @@ class Constrain:
             key = tuple([ikx] + sorted((iky, ikk)) + [ikk])
             if key in cache:
                 print(
-                    f"{self}: precomputing->{ikx},{iky},{ikz} — found item in cache with key {key}"
+                    f"{self}: precomputing->{ikx},{iky},{ikz}"
+                    f" — found item in cache with key {key}"
                 )
                 self._xi[i] = cache[key]
                 continue
@@ -310,7 +311,10 @@ class Constrain:
             cache[key] = self._xi[i]
 
     def __repr__(self):
-        return f"<Constrain: {self.__class__.__name__}, filter={self._filter} X={self._cfd.position}>"
+        return (
+            f"<Constrain: {self.__class__.__name__},"
+            f"filter={self._filter} X={self._cfd.position}>"
+        )
 
     def compute_covariance(self, other, frame):
         """Compute the covariance matrice between two functional constrains."""

@@ -1,5 +1,6 @@
 import attr
 import numexpr as ne
+import numpy as np
 from scipy.special import j0
 
 from .utils import WTH
