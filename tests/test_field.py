@@ -20,7 +20,7 @@ def test_sigma():
             np.trapz(k ** (2 + 2 * i) * Pk * filt.W(k) ** 2, k) / (2 * np.pi ** 2)
         )
 
-        assert_allclose(got, expected)
+        assert_allclose(got, expected, rtol=1e-5)
 
     for i in range(-5, 5):
         test_sigma_n(i)
