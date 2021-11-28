@@ -62,9 +62,11 @@ class FieldHandler:
         """Precompute some data."""
 
         L = self.Lbox
-        N = 1j * self.dimensions
+        N = self.dimensions
 
-        self._grid = np.meshgrid(*[np.arange(0, L, N)] * self.Ndim)
+        self._grid = np.array(
+            np.meshgrid(*[np.arange(0, L, N)] * self.Ndim, indexing="ij")
+        )
 
         np.random.seed(self.seed)
 

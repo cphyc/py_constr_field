@@ -190,7 +190,6 @@ class Constrain:
 
         new_shape = [-1] + [1] * (grid.ndim - 1)
         pos = self._cfd.position.reshape(*new_shape)
-        grid = self._fh.get_grid()
         d = numexpr.evaluate(
             "sum((grid-pos)**2, axis=0)", local_dict=dict(pos=pos, grid=grid)
         )
