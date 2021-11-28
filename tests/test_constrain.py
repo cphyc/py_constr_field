@@ -148,7 +148,7 @@ def test_full_correlation():
         test_it(use_cache)
 
 
-@pytest.skip("FIXME")
+@pytest.mark.skip("FIXME")
 def test_measures():
     f1 = filters.GaussianFilter(radius=5)
     fh = FieldHandler(Ndim=3, Lbox=15, dimensions=16, Pk=(k, Pk), filter=f1)
