@@ -107,7 +107,6 @@ def test_full_correlation():
     ref = c.cov
 
     def test_it(use_cache):
-
         # Note: here we use the old package's k and Pk so that their result agree can be
         # be compared
         fh = FieldHandler(
@@ -145,7 +144,7 @@ def test_full_correlation():
     # Run once first to fill cache
     test_it(False)
     for use_cache in (True, False):
-        yield test_it, use_cache
+        test_it(use_cache)
 
 
 def test_measures():

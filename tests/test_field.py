@@ -23,7 +23,7 @@ def test_sigma():
         assert_allclose(got, expected)
 
     for i in range(-5, 5):
-        yield test_sigma_n, i
+        test_sigma_n(i)
 
 
 def test_field_sigma():
