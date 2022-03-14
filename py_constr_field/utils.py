@@ -38,13 +38,13 @@ def integrand(phi, theta, ikx, iky, ikz, ikk, d, k, k2Pk_W1_W2):
     intgd = k2Pk_W1_W2 * sin_theta * exppart
 
     if ikx != 0:
-        intgd *= kx ** ikx
+        intgd *= kx**ikx
     if iky != 0:
-        intgd *= ky ** iky
+        intgd *= ky**iky
     if ikz != 0:
-        intgd *= kz ** ikz
+        intgd *= kz**ikz
     if ikk != 0:
-        intgd /= k ** ikk
+        intgd /= k**ikk
 
     return trapz(intgd, k)
 

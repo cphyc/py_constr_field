@@ -17,7 +17,7 @@ def test_sigma():
     def test_sigma_n(i):
         got = fh.sigma(i)
         expected = np.sqrt(
-            np.trapz(k ** (2 + 2 * i) * Pk * filt.W(k) ** 2, k) / (2 * np.pi ** 2)
+            np.trapz(k ** (2 + 2 * i) * Pk * filt.W(k) ** 2, k) / (2 * np.pi**2)
         )
 
         assert_allclose(got, expected)
@@ -54,8 +54,8 @@ def test_filtering():
     )
     ref = (
         1
-        / (2 * np.pi * R ** 2) ** (3 / 2)
-        * np.exp(-(x ** 2 + y ** 2 + z ** 2) / 2 / R ** 2)
+        / (2 * np.pi * R**2) ** (3 / 2)
+        * np.exp(-(x**2 + y**2 + z**2) / 2 / R**2)
         * v0
     )
 
