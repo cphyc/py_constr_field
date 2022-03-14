@@ -100,11 +100,11 @@ def compute_covariance(c1, c2, frame):
 
     k = Pk_gen.x
     Pk = Pk_gen.y
-    k2Pk = k ** 2 * Pk
+    k2Pk = k**2 * Pk
 
     k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
 
-    eightpi3 = 8 * np.pi ** 3
+    eightpi3 = 8 * np.pi**3
 
     N1 = c1._cfd.N
     N2 = c2._cfd.N
@@ -208,11 +208,11 @@ class Constrain:
 
         k = Pk_gen.x
         Pk = Pk_gen.y
-        k2Pk = k ** 2 * Pk
+        k2Pk = k**2 * Pk
 
         k2Pk_W1_W2 = k2Pk * window1(k) * window2(k)
 
-        eightpi3 = 8 * np.pi ** 3
+        eightpi3 = 8 * np.pi**3
 
         N1 = self._cfd.N
         self._xi = {}

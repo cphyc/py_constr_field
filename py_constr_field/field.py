@@ -83,7 +83,7 @@ class FieldHandler:
         ]
 
         self.kgrid = kgrid = np.array(np.meshgrid(*all_k, indexing="ij"))
-        self.knorm = knorm = np.sqrt(np.sum(kgrid ** 2, axis=0))
+        self.knorm = knorm = np.sqrt(np.sum(kgrid**2, axis=0))
 
         # Compute Pk
         Pk = np.zeros_like(knorm)
@@ -231,7 +231,7 @@ class FieldHandler:
         if corr_factor is None:
             TH_filter = filters.TopHatFilter(8)
             corr_factor = self.sigma8 / np.sqrt(
-                np.trapz(k ** 2 * Pk * TH_filter.W(k) ** 2, k)
+                np.trapz(k**2 * Pk * TH_filter.W(k) ** 2, k)
             )
 
-        return np.sqrt(np.trapz(k ** kpower * Pk * filter.W(k) ** 2, k)) * corr_factor
+        return np.sqrt(np.trapz(k**kpower * Pk * filter.W(k) ** 2, k)) * corr_factor

@@ -7,7 +7,7 @@ from py_constr_field.utils import WTH, trapz
 
 def test_trapz():
     x = np.linspace(0, 100)
-    y = x ** 2
+    y = x**2
 
     vref = np.trapz(y, x)
     vtest = trapz(y, x)
